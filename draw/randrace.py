@@ -6,7 +6,9 @@ import random
 import re
 import time
 
-from demorace import Sequences
+from . import demorace
+#from demorace import Sequences
+Sequences = demorace.Sequences
 import collections
 
 logger = logging.getLogger(__name__)
@@ -382,7 +384,7 @@ class RandElection:
                 })
             bstyles.append({
                 "@type": "ElectionResults.BallotStyle",
-                "GpUnitIds": lgpu["@id"],
+                "GpUnitIds": [lgpu["@id"]],
                 "OrderedContent": oc,
                 "PageHeader": '''General Election, 2022-11-08
 {}, {}, {}, '''.format(lgpu["Name"], l2gpu["Name"], topGpUnit["Name"]) + "page {PAGE} of {PAGES}",

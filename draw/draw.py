@@ -749,25 +749,29 @@ class OrderedHeader:
 
 class BallotStyle:
     def __init__(self, erctx, ballotstyle_json_object):
-        bs = ballotstyle_json_object
-        self.bs = bs
-        self.erctx = erctx
-        self.gpunits = [erctx.getRawOb(x) for x in bs['GpUnitIds']]
-        self.ext = bs.get('ExternalIdentifier', [])
-        # image_uri is to image of example ballot?
-        self.image_uri = bs.get('ImageUri', [])
-        self.content = [erctx.makeDrawOb(ob) for ob in bs.get('OrderedContent', [])]
-        # e.g. for a party-specific primary ballot (may associate with multiple parties)
-        self.parties = [erctx.getRawOb(x) for x in bs.get('PartyIds', [])]
-        # _numPages gets filled in on a first rendering pass and used on second pass
-        self._numPages = 'X'
-        self._pageHeader = bs.get('PageHeader') # extension field
-        self._bubbles = None
-        self._headerBoxes = {}
-        self.contenttop = None
-        self.contentbottom = None
-        self.contentleft = None
-        self.contentright = None
+        try:
+            bs = ballotstyle_json_object
+            self.bs = bs
+            self.erctx = erctx
+            self.gpunits = [erctx.getRawOb(x) for x in bs['GpUnitIds']]
+            self.ext = bs.get('ExternalIdentifier', [])
+            # image_uri is to image of example ballot?
+            self.image_uri = bs.get('ImageUri', [])
+            self.content = [erctx.makeDrawOb(ob) for ob in bs.get('OrderedContent', [])]
+            # e.g. for a party-specific primary ballot (may associate with multiple parties)
+            self.parties = [erctx.getRawOb(x) for x in bs.get('PartyIds', [])]
+            # _numPages gets filled in on a first rendering pass and used on second pass
+            self._numPages = 'X'
+            self._pageHeader = bs.get('PageHeader') # extension field
+            self._bubbles = None
+            self._headerBoxes = {}
+            self.contenttop = None
+            self.contentbottom = None
+            self.contentleft = None
+            self.contentright = None
+        except Exception as e:
+            logger.error('error processing BallotStyle js, %s, %s', e, json.dumps(bs))
+            raise
     def select(self, selectors):
         for sel in selectors:
             if sel in self.ext:

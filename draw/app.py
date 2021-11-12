@@ -16,6 +16,7 @@ memcache = None
 
 from . import cache
 from . import demorace
+from . import randrace
 from . import draw
 ElectionPrinter = draw.ElectionPrinter
 
@@ -173,6 +174,18 @@ def demoracebubbles():
     #pdfbytes = pdfbytes.getvalue()
     bubbles = ep.getBubbles()
     return bubbles, 200, {"Content-Type":"application/json"}
+
+@app.route('/random.pdf')
+def randracepdf():
+    rer = randrace.RandElection()
+    er = rer.buildElectionReport()
+    elections = er.get('Election', [])
+    el = elections[0]
+    ep = ElectionPrinter(er, el)
+    pdfbytes = io.BytesIO()
+    ep.drawToFile(outfile=pdfbytes)
+    pdfbytes = pdfbytes.getvalue()
+    return pdfbytes, 200, {"Content-Type":"application/pdf"}
 
 @app.route('/edit/<int:electionid>')
 def edit(electionid):
