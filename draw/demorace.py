@@ -5,6 +5,7 @@
 import json
 import logging
 import os
+import re
 import sys
 import time
 
@@ -20,9 +21,10 @@ class _seqSource:
         return self.s.next(self.sel)
 
 class Sequences:
+    attype = None
     def __init__(self):
         self.sequences = {}
-        self.attype = {}
+        #self.attype = {}
         self.unki = 0
     def next(self, sel):
         v = self.sequences.get(sel, 0) + 1
@@ -30,8 +32,8 @@ class Sequences:
         return str(sel) + str(v)
     def source(self, sel):
         return _seqSource(self, sel)
-    def setTypeMap(self, ob):
-        self.attype = ob
+#    def setTypeMap(self, ob):
+#        self.attype = ob
     def sourceForType(self, attype):
         sel = self.attype.get(attype)
         if sel is None:
@@ -50,7 +52,8 @@ for xd in _path:
     if os.path.exists(fp):
         with open(fp) as fin:
             ob = json.load(fin)
-        typeSequences.setTypeMap(ob)
+        #typeSequences.setTypeMap(ob)
+        Sequences.attype = ob
         break
 
 _party_id = typeSequences.sourceForType("ElectionResults.Party")

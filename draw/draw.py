@@ -115,165 +115,79 @@ def setOptionalFields(self, ob):
     for field_name, default_value in self._optional_fields:
         setattr(self, field_name, ob.get(field_name, default_value))
 
-class Choice:
-    def __init__(self, name, subtext=None):
-        self.name = name
-        self.subtext = subtext
-        # TODO: measure text for box width & wrap. see reportlab.platypus.Paragraph
-        # TODO: wrap with optional max-5% squish instead of wrap
-        # _bubbleCoords = (left, bottom, width, height)
-        self._bubbleCoords = None
-    def height(self):
-        # TODO: multiline for name and subtext
-        y = 0
-        ypos = y - gs.candidateLeading
-        if self.subtext:
-            ypos -= gs.candsubLeading
-        return -1*(ypos - (0.1 * inch))
-    def draw(self, c, x, y, width=(7.5/2)*inch - 1):
-        # x,y is a top,left of a box to draw bubble and text into
-        capHeight = fonts[gs.candidateFontName].capHeightPerPt * gs.candidateFontSize
-        bubbleHeight = min(3*mm, capHeight)
-        bubbleYShim = (capHeight - bubbleHeight) / 2.0
-        bubbleBottom = y - gs.candidateFontSize + bubbleYShim
-        c.setStrokeColorRGB(0,0,0)
-        c.setLineWidth(1)
-        c.setFillColorRGB(1,1,1)
-        self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
-        c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2)
-        textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
-        # TODO: assumes one line
-        c.setFillColorRGB(0,0,0)
-        txto = c.beginText(textx, y - gs.candidateFontSize)
-        txto.setFont(gs.candidateFontName, gs.candidateFontSize, gs.candidateLeading)
-        txto.textLines(self.name)
-        c.drawText(txto)
-        ypos = y - gs.candidateLeading
-        if self.subtext:
-            txto = c.beginText(textx, ypos - gs.candsubFontSize)
-            txto.setFont(gs.candsubFontName, gs.candsubFontSize, leading=gs.candsubLeading)
-            txto.textLines(self.subtext)
-            c.drawText(txto)
-            ypos -= gs.candsubLeading
-        # separator line
-        c.setStrokeColorRGB(0,0,0)
-        c.setLineWidth(0.25)
-        sepy = ypos - (0.1 * inch)
-        c.line(textx, sepy, x+width, sepy)
-        return
-    def _writeInLine(self, c):
-        c.setDash([4,4])
-        c.setLineWidth(0.5)
-        c.setDash(None)
 
 
-class Contest:
-    def __init__(self, name, title=None, subtitle=None, choices=None):
-        self.name = name
-        self.title = title or name
-        self.subtitle = subtitle
-        self.choices = choices
-        self._choices_height = None
-        self._height = None
-        self._maxChoiceHeight = None
-    def height(self):
-        if self._height is None:
-            choices = self.choices or []
-            self._maxChoiceHeight = max([x.height() for x in choices])
-            ch = self._maxChoiceHeight * len(choices)
-            ch += 4 # top and bottom border
-            ch += gs.titleLeading + gs.subtitleLeading
-            ch += 0.1 * inch # header-choice gap
-            ch += 0.1 * inch # bottom padding
-            self._height = ch
-        return self._height
-    def draw(self, c, x, y, width=(7.5/2)*inch - 1):
-        # x,y is a top,left
-        height = self.height()
+# class Contest:
+#     def __init__(self, name, title=None, subtitle=None, choices=None):
+#         self.name = name
+#         self.title = title or name
+#         self.subtitle = subtitle
+#         self.choices = choices
+#         self._choices_height = None
+#         self._height = None
+#         self._maxChoiceHeight = None
+#     def height(self):
+#         if self._height is None:
+#             choices = self.choices or []
+#             self._maxChoiceHeight = max([x.height() for x in choices])
+#             ch = self._maxChoiceHeight * len(choices)
+#             ch += 4 # top and bottom border
+#             ch += gs.titleLeading + gs.subtitleLeading
+#             ch += 0.1 * inch # header-choice gap
+#             ch += 0.1 * inch # bottom padding
+#             self._height = ch
+#         return self._height
+#     def draw(self, c, x, y, width=(7.5/2)*inch - 1):
+#         # x,y is a top,left
+#         height = self.height()
 
-        pos = y - 1.5
-        # title
-        c.setStrokeColorRGB(*gs.titleBGColor)
-        c.setFillColorRGB(*gs.titleBGColor)
-        c.rect(x, pos - gs.titleLeading, width, gs.titleLeading, fill=1, stroke=0)
-        c.setFillColorRGB(0,0,0)
-        c.setStrokeColorRGB(0,0,0)
-        txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.titleFontSize)
-        txto.setFont(gs.titleFontName, gs.titleFontSize)
-        txto.textLines(self.title)
-        c.drawText(txto)
-        pos -= gs.titleLeading
-        # subtitle
-        c.setStrokeColorCMYK(.1,0,0,0)
-        c.setFillColorCMYK(.1,0,0,0)
-        c.rect(x, pos - gs.subtitleLeading, width, gs.subtitleLeading, fill=1, stroke=0)
-        c.setFillColorRGB(0,0,0)
-        c.setStrokeColorRGB(0,0,0)
-        txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.subtitleFontSize)
-        txto.setFont(gs.subtitleFontName, gs.subtitleFontSize)
-        txto.textLines(self.subtitle)
-        c.drawText(txto)
-        pos -= gs.subtitleLeading
-        pos -= 0.1 * inch # header-choice gap
-        c.setFillColorRGB(0,0,0)
-        c.setStrokeColorRGB(0,0,0)
-        choices = self.choices or []
-        for ch in choices:
-            ch.draw(c, x + 1, pos, width=width - 1)
-            pos -= self._maxChoiceHeight
+#         pos = y - 1.5
+#         # title
+#         c.setStrokeColorRGB(*gs.titleBGColor)
+#         c.setFillColorRGB(*gs.titleBGColor)
+#         c.rect(x, pos - gs.titleLeading, width, gs.titleLeading, fill=1, stroke=0)
+#         c.setFillColorRGB(0,0,0)
+#         c.setStrokeColorRGB(0,0,0)
+#         txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.titleFontSize)
+#         txto.setFont(gs.titleFontName, gs.titleFontSize)
+#         txto.textLines(self.title)
+#         c.drawText(txto)
+#         pos -= gs.titleLeading
+#         # subtitle
+#         c.setStrokeColorCMYK(.1,0,0,0)
+#         c.setFillColorCMYK(.1,0,0,0)
+#         c.rect(x, pos - gs.subtitleLeading, width, gs.subtitleLeading, fill=1, stroke=0)
+#         c.setFillColorRGB(0,0,0)
+#         c.setStrokeColorRGB(0,0,0)
+#         txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.subtitleFontSize)
+#         txto.setFont(gs.subtitleFontName, gs.subtitleFontSize)
+#         txto.textLines(self.subtitle)
+#         c.drawText(txto)
+#         pos -= gs.subtitleLeading
+#         pos -= 0.1 * inch # header-choice gap
+#         c.setFillColorRGB(0,0,0)
+#         c.setStrokeColorRGB(0,0,0)
+#         choices = self.choices or []
+#         for ch in choices:
+#             ch.draw(c, x + 1, pos, width=width - 1)
+#             pos -= self._maxChoiceHeight
 
-        # top border
-        c.setStrokeColorRGB(0,0,0)
-        c.setLineWidth(3)
-        c.line(x-0.5, y, x + width, y) # -0.5 caps left border 1.0pt line
-        # left border and bottom border
-        c.setLineWidth(1)
-        path = c.beginPath()
-        path.moveTo(x, y)
-        path.lineTo(x, y-height)
-        path.lineTo(x+width, y-height)
-        c.drawPath(path, stroke=1)
-        return
-    def getBubbles(self):
-        choices = self.choices or []
-        return {ch.name:ch._bubbleCoords for ch in choices}
+#         # top border
+#         c.setStrokeColorRGB(0,0,0)
+#         c.setLineWidth(3)
+#         c.line(x-0.5, y, x + width, y) # -0.5 caps left border 1.0pt line
+#         # left border and bottom border
+#         c.setLineWidth(1)
+#         path = c.beginPath()
+#         path.moveTo(x, y)
+#         path.lineTo(x, y-height)
+#         path.lineTo(x+width, y-height)
+#         c.drawPath(path, stroke=1)
+#         return
+#     def getBubbles(self):
+#         choices = self.choices or []
+#         return {ch.name:ch._bubbleCoords for ch in choices}
 
-
-
-therace = Contest(
-    'Everything', 'The Race for Everything', 'Choose as many as you like',
-    [
-        Choice('Alice Argyle', 'Anklebiter Assembly'),
-        Choice('Bob Brocade', 'Boring Board'),
-        Choice('Çandidate Ñame 亀', 'Cowardly Coalition'),
-        Choice('Dorian Duck', 'Dumb Department'),
-        Choice('Elaine Entwhistle', 'Electable Entertainers'),
-    ],
-)
-
-raceZ = Contest(
-    'Nothing', 'The Race To The Bottom', 'Vote for one',
-    [
-        Choice('Zaphod', "He's just this guy, you know?"),
-        Choice('Zardoz', 'There can be only one'),
-        Choice('Zod', 'Kneel'),
-    ],
-)
-
-headDwarfRace = Contest(
-    'Head Dwarf',
-    'Head Dwarf',
-    'Vote for one',
-    [
-        Choice('Sleepy'),
-        Choice('Happy'),
-        Choice('Dopey'),
-        Choice('Grumpy'),
-        Choice('Sneezy'),
-        Choice('Bashful'),
-        Choice('Doc'),
-    ],
-)
 
 def gpunitName(gpunit):
     name = gpunit.get('Name')
