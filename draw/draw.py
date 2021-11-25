@@ -217,6 +217,7 @@ class BallotMeasureSelection:
         ('VoteCounts', []), #VoteCounts results objects
     )
     def __init__(self, erctx, cs_json_object):
+        self.erctx = erctx
         self.cs = cs_json_object
         self.atid = self.cs['@id']
         self.selection = self.cs['Selection']
@@ -233,7 +234,10 @@ class BallotMeasureSelection:
         bubbleBottom = y - gs.candidateFontSize + bubbleYShim
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(1)
-        c.setFillColorRGB(1,1,1)
+        if self.erctx.isMarked(self.atid):
+            c.setFillColorRGB(0,0,0)
+        else:
+            c.setFillColorRGB(1,1,1)
         self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
         c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2)
         textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
@@ -261,6 +265,7 @@ class CandidateSelection:
         ('VoteCounts', []), #VoteCounts results objects
     )
     def __init__(self, erctx, cs_json_object):
+        self.erctx = erctx
         self.cs = cs_json_object
         self.atid = self.cs['@id']
         setOptionalFields(self, self.cs)
@@ -304,7 +309,10 @@ class CandidateSelection:
         bubbleBottom = y - gs.candidateFontSize + bubbleYShim
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(1)
-        c.setFillColorRGB(1,1,1)
+        if self.erctx.isMarked(self.atid):
+            c.setFillColorRGB(0,0,0)
+        else:
+            c.setFillColorRGB(1,1,1)
         self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
         c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2)
         textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
@@ -946,6 +954,11 @@ class ElectionResultsContext:
         self.obids = gatherIds(self.er)
         # draw objects by id, same key as obids
         self.dobs = {}
+        # contestMarkedCsels is the same two level map returned by ballot scanner
+        # map[contest @id]map[csel @id](bool marked)
+        # For this purpose it can also be cheated skipping the contest part:
+        # {"x":{cselId:True, ...}}
+        self.contestMarkedCsels = None
     def getRawOb(self, id_string):
         return self.obids[id_string]
     def getDrawOb(self, id_string):
@@ -967,6 +980,13 @@ class ElectionResultsContext:
         if atid:
             self.dobs[atid] = dob
         return dob
+    def isMarked(self, cselId):
+        if self.contestMarkedCsels is None:
+            return False
+        for mc in self.contestMarkedCsels.values():
+            if cselId in mc:
+                return True
+        return False
 
 
 

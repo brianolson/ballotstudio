@@ -6,6 +6,13 @@ import random
 import re
 import time
 
+if __name__ == '__main__':
+    # This is a dumb hack only relevent for debugging as `python3 randrace.py`
+    if __package__ is None:
+        import sys
+        sys.path = [os.path.dirname(os.path.dirname(__file__))] + sys.path
+        __package__ = 'draw'
+
 from . import demorace
 #from demorace import Sequences
 Sequences = demorace.Sequences
