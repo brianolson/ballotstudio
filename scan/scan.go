@@ -556,6 +556,7 @@ func (s *Scanner) hotspotsDebugImage(spots []point, it *image.YCbCr) *image.RGBA
 	return out
 }
 
+// return map[contest @id]map[csel @id](bool marked)
 func (s *Scanner) ReadScannedImage(fname string) (marked map[string]map[string]bool, err error) {
 	r, err := os.Open(fname)
 	if err != nil {
@@ -569,6 +570,7 @@ func (s *Scanner) ReadScannedImage(fname string) (marked map[string]map[string]b
 	return s.ProcessScannedImage(im)
 }
 
+// return map[contest @id]map[csel @id](bool marked)
 func (s *Scanner) ProcessScannedImage(im image.Image) (marked map[string]map[string]bool, err error) {
 	switch it := im.(type) {
 	case *image.YCbCr:
@@ -787,6 +789,7 @@ func (s *Scanner) translateWholeScanToOrig(it *image.YCbCr) (dboi image.Image, e
 	return oi, nil
 }
 
+// return map[contest @id]map[csel @id](bool marked)
 func (s *Scanner) processYCbCr(it *image.YCbCr) (marked map[string]map[string]bool, err error) {
 	if it.Rect.Min.X != 0 || it.Rect.Min.Y != 0 {
 		return nil, fmt.Errorf("image origin not 0,0 but %d,%d", it.Rect.Min.X, it.Rect.Min.Y)
@@ -908,6 +911,7 @@ func (s *Scanner) measureBubble(it *image.YCbCr, xywh []float64) (darkCount, pxC
 	*/
 }
 
+// return map[contest @id]map[csel @id](bool marked)
 func (s *Scanner) measureScannedBubbles(it *image.YCbCr) (marked map[string]map[string]bool) {
 	marked = make(map[string]map[string]bool)
 	for _, ballotType := range s.Bj.Bubbles {
