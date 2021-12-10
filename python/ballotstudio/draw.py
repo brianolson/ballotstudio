@@ -1027,6 +1027,9 @@ class ElectionPrinter:
         for bstyle in el.get('BallotStyle', []):
             self.ballot_styles.append(BallotStyle(erctx,bstyle))
         return
+    def setMarks(self, marks):
+        "marks is map[contest @id]map[csel @id](bool marked)"
+        self.erctx.contestMarkedCsels = marks
     def electionTypeTitle(self):
         # TODO: i18n
         if self.election_type == 'other':
@@ -1127,6 +1130,7 @@ def main():
     ap.add_argument('--verbose', default=False, action='store_true')
     ap.add_argument('--outdir', default=None)
     ap.add_argument('--prefix', default='')
+    ap.add_argument('--mark', help='bubbles to mark, json from scan.go or randvote.py')
     args = ap.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)

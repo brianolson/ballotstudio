@@ -1,3 +1,4 @@
+
 ballotstudio:	static/demoelection.json .PHONY data/type_seq_json.go
 	go build ./cmd/ballotstudio
 

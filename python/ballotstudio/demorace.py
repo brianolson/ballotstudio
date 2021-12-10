@@ -20,11 +20,31 @@ class _seqSource:
     def __call__(self):
         return self.s.next(self.sel)
 
+_default_attypes = None
+
+def get_attypes():
+    global _default_attypes
+    # TODO: properly bundle type_seq.json into package data
+    _thisdir = os.path.dirname(os.path.abspath(__file__))
+    _path = (_thisdir, os.path.join(os.path.dirname(_thisdir), 'data'))
+    for xd in _path:
+        fp = os.path.join(xd, 'type_seq.json')
+        if os.path.exists(fp):
+            with open(fp) as fin:
+                ob = json.load(fin)
+            #typeSequences.setTypeMap(ob)
+            _default_attypes = ob
+            break
+        logger.warning('%s: nope', fp)
+    if _default_attypes is None:
+        logger.warning('no default attypes, missing type_seq.json')
+        return dict()
+    return dict(_default_attypes)
+
 class Sequences:
-    attype = None
     def __init__(self):
         self.sequences = {}
-        #self.attype = {}
+        self.attype = get_attypes()
         self.unki = 0
     def next(self, sel):
         v = self.sequences.get(sel, 0) + 1
@@ -38,23 +58,12 @@ class Sequences:
         sel = self.attype.get(attype)
         if sel is None:
             self.unki += 1
-            sel = 'unk%d_'.format(self.unki)
-            logger.warning('unknown attype %r, setting up seq %s', attype, sel)
+            sel = 'unk{}_'.format(self.unki)
+            logger.warning('unknown attype X %r, setting up seq %s', attype, sel)
             self.attype[attype] = sel
         return _seqSource(self, sel)
 
 typeSequences = Sequences()
-
-_thisdir = os.path.dirname(os.path.abspath(__file__))
-_path = (_thisdir, os.path.join(os.path.dirname(_thisdir), 'data'))
-for xd in _path:
-    fp = os.path.join(xd, 'type_seq.json')
-    if os.path.exists(fp):
-        with open(fp) as fin:
-            ob = json.load(fin)
-        #typeSequences.setTypeMap(ob)
-        Sequences.attype = ob
-        break
 
 _party_id = typeSequences.sourceForType("ElectionResults.Party")
 

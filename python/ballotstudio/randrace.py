@@ -407,8 +407,12 @@ class RandElection:
         er["Person"] = self.persons
         return er
 
-if __name__ == '__main__':
+
+def main():
     import json
     logging.basicConfig(level=logging.DEBUG)
     rer = RandElection()
     print(json.dumps(rer.buildElectionReport(), indent=2))
+
+if __name__ == '__main__':
+    main()

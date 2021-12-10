@@ -12,6 +12,7 @@ Ballot Studio is in two parts, a Python back end that draws PDF ballots, and a g
 
 * `python3 -m venv bsvenv`
 * `bsvenv/bin/pip install fonttools Flask mercurial`
+* `(cd python && ../bsvenv/bin/pip install -e .)`
 * `bsvenv/bin/hg clone https://hg.reportlab.com/hg-public/reportlab`
 * `(cd reportlab && ../bsvenv/bin/pip install -e .)`
 * get the resources blob (images and fonts):
@@ -56,14 +57,23 @@ Dependencies:
 `ballotstudio` will normally automatically start and stop the draw server.
 It can be run on its own with:
 
-`FLASK_ENV=development FLASK_APP=draw/app.py bsvenv/bin/flask run`
+`FLASK_ENV=development FLASK_APP=python/ballotstudio/app.py bsvenv/bin/flask run`
 
 `ballotstudio` can be given the option `-draw-backend http://127.0.0.1:5000/` to point to that at Flask's default port 5000.
 
   - `http://127.0.0.1:5000/demo.pdf` - demo ElectionReport drawn to PDF
   - `http://127.0.0.1:5000/demo.bubbles.json` - bubble positions
   - `http://127.0.0.1:5000/demo.js` - ElectionReport built by draw/demorace.py
+  - `http://127.0.0.1:5000/random.pdf` - Random 10-locality election
 
+
+```
+
+python3 -m ballotstudio.demorace
+python3 -m ballotstudio.randrace > rr.json
+
+
+```
 
 ## Production Notes
 

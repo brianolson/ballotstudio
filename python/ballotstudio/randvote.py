@@ -32,9 +32,12 @@ def randVote(er):
             out[co['@id']] = {x['@id']:True for x in chosen}
     return out
 
-if __name__ == '__main__':
+def main():
     import json
     import sys
     logging.basicConfig(level=logging.DEBUG)
     er = json.load(sys.stdin)
     json.dump(randVote(er), sys.stdout)
+
+if __name__ == '__main__':
+    main()
