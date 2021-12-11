@@ -66,12 +66,18 @@ It can be run on its own with:
   - `http://127.0.0.1:5000/demo.js` - ElectionReport built by draw/demorace.py
   - `http://127.0.0.1:5000/random.pdf` - Random 10-locality election
 
+Demo flow for creating a randomly marked ballot for an election:
 
-```
-
-python3 -m ballotstudio.demorace
+```sh
+# use the basic demo race
+python3 -m ballotstudio.demorace > rr.json
+# OR create a random election with 10 towns, 2 counties, 1 state
 python3 -m ballotstudio.randrace > rr.json
-
+# create random vote picks for that election
+python3 -m ballotstudio.randvote < /tmp/rr.json > /tmp/rv.json
+# draw out all the ballot styles to pdf files
+mkdir -p /tmp/rrp
+rm -f /tmp/rrp/*pdf; python3 -m ballotstudio.draw --mark /tmp/rv.json --outdir /tmp/rrp /tmp/rr.json
 
 ```
 

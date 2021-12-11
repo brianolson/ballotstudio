@@ -3,6 +3,7 @@
 #
 
 import glob
+import gzip
 import io
 import json
 import logging
@@ -234,12 +235,14 @@ class BallotMeasureSelection:
         bubbleBottom = y - gs.candidateFontSize + bubbleYShim
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(1)
+        rrFill = 0
         if self.erctx.isMarked(self.atid):
             c.setFillColorRGB(0,0,0)
+            rrFill = 1
         else:
             c.setFillColorRGB(1,1,1)
         self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
-        c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2)
+        c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2, fill=rrFill)
         textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
         # TODO: assumes one line
         c.setFillColorRGB(0,0,0)
@@ -309,12 +312,14 @@ class CandidateSelection:
         bubbleBottom = y - gs.candidateFontSize + bubbleYShim
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(1)
+        rrFill = 0
         if self.erctx.isMarked(self.atid):
             c.setFillColorRGB(0,0,0)
+            rrFill = 1
         else:
             c.setFillColorRGB(1,1,1)
         self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
-        c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2)
+        c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2, fill=rrFill)
         textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
         # TODO: assumes one line
         c.setFillColorRGB(0,0,0)
@@ -983,6 +988,7 @@ class ElectionResultsContext:
     def isMarked(self, cselId):
         if self.contestMarkedCsels is None:
             return False
+        logger.debug('%r in? %r', cselId, self.contestMarkedCsels)
         for mc in self.contestMarkedCsels.values():
             if cselId in mc:
                 return True
@@ -1122,6 +1128,13 @@ def byId(they, x):
             return y
     raise KeyError(x)
 
+def bopen(fname, mode='rt'):
+    if fname == '-':
+        return sys.stdin
+    if fname.endswith('.gz'):
+        return gzip.open(fname, mode)
+    return open(fname, mode)
+
 def main():
     import argparse
     ap = argparse.ArgumentParser()
@@ -1136,13 +1149,19 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-    if args.election_json == '-':
-        er = json.load(sys.stdin)
-    else:
-        with open(args.election_json) as fin:
-            er = json.load(fin)
+    if args.election_json:
+        fin = bopen(args.election_json)
+        er = json.load(fin)
+        fin.close()
+    marks = None
+    if args.mark:
+        fin = bopen(args.mark)
+        marks = json.load(fin)
+        fin.close()
+
     for el in er.get('Election', []):
         ep = ElectionPrinter(er, el)
+        ep.setMarks(marks)
         fnames_written = ep.drawToDir(args.outdir, args.prefix)
         sys.stdout.write(', '.join(fnames_written) + '\n')
         if args.bubbles:
