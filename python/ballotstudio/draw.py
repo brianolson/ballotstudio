@@ -800,19 +800,28 @@ class BallotStyle:
         Tuesday, November 8, 2022, page 1 of 5
         """
         pht = self.pageHeaderTemplate()
-        return pht.format(PAGE=page, PAGES=self._numPages)
-    def pageHeaderTemplate(self):
-        if self._pageHeader is not None:
-            return self._pageHeader
         election = self.erctx.eprinter
         datepart = election.startdate
         if election.startdate != election.enddate:
             datepart += ' - ' + election.enddate
         gpunitnames = ', '.join([gpunitName(x) for x in self.gpunits])
-        text = "Ballot for {}\n{}\n{}".format(
-            election.electionTypeTitle(), gpunitnames, datepart) + ' - page {PAGE} of {PAGES}'
-        self._pageHeader = text
-        return self._pageHeader
+        place = ""
+        if self.gpunits:
+            place = gpunitName(self.gpunits[-1])
+        anydate = election.enddate or election.startdate
+        return pht.format(
+            PAGE=page,
+            PAGES=self._numPages,
+            DATE=anydate,
+            DATES=datepart,
+            PLACES=gpunitnames,
+            PLACE=place,
+        )
+    def pageHeaderTemplate(self):
+        if self._pageHeader is not None:
+            return self._pageHeader
+        return '''General Election, {DATE}
+{PLACES} page {PAGE} of {PAGES}'''
     def drawPageHeader(self, c, page):
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(1.0)

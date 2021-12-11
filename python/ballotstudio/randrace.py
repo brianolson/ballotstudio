@@ -393,8 +393,8 @@ class RandElection:
                 "@type": "ElectionResults.BallotStyle",
                 "GpUnitIds": [lgpu["@id"]],
                 "OrderedContent": oc,
-                "PageHeader": '''General Election, 2022-11-08
-{}, {}, {}, '''.format(lgpu["Name"], l2gpu["Name"], topGpUnit["Name"]) + "page {PAGE} of {PAGES}",
+                "PageHeader": '''General Election, {DATE}
+{PLACES} page {PAGE} of {PAGES}''',
             })
         election["BallotStyle"] = bstyles
         election["Candidate"] = self.candidates
