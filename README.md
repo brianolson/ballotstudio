@@ -65,6 +65,7 @@ It can be run on its own with:
   - `http://127.0.0.1:5000/demo.bubbles.json` - bubble positions
   - `http://127.0.0.1:5000/demo.js` - ElectionReport built by draw/demorace.py
   - `http://127.0.0.1:5000/random.pdf` - Random 10-locality election
+  - `http://127.0.0.1:5000/random.pdf?parties=3&counties=2&towns=10&town-contests=1&county-contests=1&top-contests=2&cand-min=3&cand-max=9`
 
 Demo flow for creating a randomly marked ballot for an election:
 

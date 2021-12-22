@@ -422,7 +422,7 @@ def main():
     ap.add_argument('--town-contests', type=int, default=1, help='number of contests to run in each town/leaf-gpunit')
     ap.add_argument('--top-contests', type=int, default=2, help='number of contests to run at the top level (state)')
     ap.add_argument('--cand-min', type=int, default=3, help='minimum number of candidates in a contest')
-    ap.add_argument('--cand-max', type=int, default=3, help='maximum number of candidates in a contest')
+    ap.add_argument('--cand-max', type=int, default=9, help='maximum number of candidates in a contest')
     args = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG)
     rer = RandElection()

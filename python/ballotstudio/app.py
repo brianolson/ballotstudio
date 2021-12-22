@@ -178,6 +178,14 @@ def demoracebubbles():
 @app.route('/random.pdf')
 def randracepdf():
     rer = randrace.RandElection()
+    rer.numParties = int(request.args.get('parties', 3))
+    rer.numL2GpUnits = int(request.args.get('counties', 2))
+    rer.numLeafGpUnits = int(request.args.get('towns', 10))
+    rer.leafContests = int(request.args.get('town-contests', 1))
+    rer.l2Contests = int(request.args.get('county-contests', 1))
+    rer.topContests = int(request.args.get('top-contests', 2))
+    rer.candidatesPerContestMin = int(request.args.get('cand-min', 3))
+    rer.candidatesPerContestMax = int(request.args.get('cand-max', 9))
     er = rer.buildElectionReport()
     elections = er.get('Election', [])
     el = elections[0]
