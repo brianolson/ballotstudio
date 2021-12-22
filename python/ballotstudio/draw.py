@@ -21,6 +21,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph
 #from reportlab.platypus import Image
+from reportlab.lib.colors import Color
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
 
@@ -402,16 +403,13 @@ class BallotMeasureContest:
             draw_selections = self.draw_selections
         pos = y - 3 # leave room for 3pt top border
         # title
+        tpar = Paragraph(self.BallotTitle, contestTitleStyle)
+        ww, wh = tpar.wrap(width, 100)
         c.setStrokeColorRGB(*gs.titleBGColor)
         c.setFillColorRGB(*gs.titleBGColor)
-        c.rect(x, pos - gs.titleLeading, width, gs.titleLeading, fill=1, stroke=0)
-        c.setFillColorRGB(0,0,0)
-        c.setStrokeColorRGB(0,0,0)
-        txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.titleFontSize)
-        txto.setFont(gs.titleFontName, gs.titleFontSize)
-        txto.textLines(self.BallotTitle)
-        c.drawText(txto)
-        pos -= gs.titleLeading
+        c.rect(x, pos - wh, width, wh, fill=1, stroke=0)
+        tpar.drawOn(c, x, pos-wh)
+        pos -= wh
         # subtitle
         c.setStrokeColorCMYK(.1,0,0,0)
         c.setFillColorCMYK(.1,0,0,0)
@@ -461,10 +459,21 @@ class BallotMeasureContest:
         draw_selections = draw_selections or self.draw_selections
         out = self._maxheight(width-1) * len(draw_selections)
         out += 4 # top and bottom border
-        out += gs.titleLeading + gs.subtitleLeading
+        tpar = Paragraph(self.BallotTitle, contestTitleStyle)
+        _, wh = tpar.wrap(width, 100)
+        out += wh + gs.subtitleLeading
         out += 0.1 * inch # header-choice gap
         out += 0.1 * inch # bottom padding
         return out
+
+contestTitleStyle = ParagraphStyle(
+    'contestTitleStyle',
+    fontName=fontsansbold,
+    fontSize=gs.titleFontSize,
+    leading=gs.titleLeading,
+    #backColor=Color(*gs.titleBGColor), #Color(0.85,0.85,0.85,1),
+    leftIndent=1 + (0.1 * inch),
+)
 
 class CandidateContest:
     "NIST 1500-100 v2 ElectionResults.CandidateContest"
@@ -505,16 +514,13 @@ class CandidateContest:
             draw_selections = self.draw_selections
         pos = y - 3 # leave room for 3pt top border
         # title
+        tpar = Paragraph(self.BallotTitle, contestTitleStyle)
+        ww, wh = tpar.wrap(width, 100)
         c.setStrokeColorRGB(*gs.titleBGColor)
         c.setFillColorRGB(*gs.titleBGColor)
-        c.rect(x, pos - gs.titleLeading, width, gs.titleLeading, fill=1, stroke=0)
-        c.setFillColorRGB(0,0,0)
-        c.setStrokeColorRGB(0,0,0)
-        txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.titleFontSize)
-        txto.setFont(gs.titleFontName, gs.titleFontSize)
-        txto.textLines(self.BallotTitle)
-        c.drawText(txto)
-        pos -= gs.titleLeading
+        c.rect(x, pos - wh, width, wh, fill=1, stroke=0)
+        tpar.drawOn(c, x, pos-wh)
+        pos -= wh
         # subtitle
         c.setStrokeColorCMYK(.1,0,0,0)
         c.setFillColorCMYK(.1,0,0,0)
@@ -569,7 +575,9 @@ class CandidateContest:
         for ds in draw_selections:
             out += max(mh, ds.height(width))
         out += 4 # top and bottom border
-        out += gs.titleLeading + gs.subtitleLeading
+        tpar = Paragraph(self.BallotTitle, contestTitleStyle)
+        _, wh = tpar.wrap(width, 100)
+        out += wh + gs.subtitleLeading
         out += 0.1 * inch # header-choice gap
         out += 0.1 * inch # bottom padding
         return out
