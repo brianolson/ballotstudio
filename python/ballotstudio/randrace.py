@@ -157,11 +157,14 @@ def bin(they, n):
 
 class RandElection:
     def __init__(self):
-        self.candidatesPerContestMin = 3
-        self.candidatesPerContestMax = 13
         self.numLeafGpUnits = 10
         self.numL2GpUnits = 2
         self.numParties = 3
+        self.leafContests = 1
+        self.l2Contests = 1
+        self.topContests = 2
+        self.candidatesPerContestMin = 3
+        self.candidatesPerContestMax = 13
 
         typeSequences = Sequences()
         self.typeSequences = typeSequences
@@ -339,9 +342,9 @@ class RandElection:
         l2GpUnits = [self.makeGpUnit(l1g) for l1g in l1groups]
         topGpUnit = self.makeGpUnit(l2GpUnits)
 
-        leafContests = [[self.makeContest(gpu)] for gpu in leafGpUnits]
-        l2Contests = [[self.makeContest(gpu)] for gpu in l2GpUnits]
-        topContests = [self.makeContest(topGpUnit) for _ in range(2)]
+        leafContests = [[self.makeContest(gpu) for _ in range(self.leafContests)] for gpu in leafGpUnits]
+        l2Contests = [[self.makeContest(gpu) for _ in range(self.l2Contests)] for gpu in l2GpUnits]
+        topContests = [self.makeContest(topGpUnit) for _ in range(self.topContests)]
 
         instructions = self.instructions()
         columnBreak = self.columnBreak()
@@ -409,9 +412,28 @@ class RandElection:
 
 
 def main():
+    import argparse
     import json
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--parties', type=int, default=3)
+    ap.add_argument('--counties', type=int, default=2, help='level 2 geo-political units, bigger than a town, smaller than a state, e.g. counties')
+    ap.add_argument('--county-contests', type=int, default=1, help='number of contests to run in each county/l2-gpunit')
+    ap.add_argument('--towns', type=int, default=10, help='number of leaf geo-political units, towns/cities/municaplites/etc')
+    ap.add_argument('--town-contests', type=int, default=1, help='number of contests to run in each town/leaf-gpunit')
+    ap.add_argument('--top-contests', type=int, default=2, help='number of contests to run at the top level (state)')
+    ap.add_argument('--cand-min', type=int, default=3, help='minimum number of candidates in a contest')
+    ap.add_argument('--cand-max', type=int, default=3, help='maximum number of candidates in a contest')
+    args = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG)
     rer = RandElection()
+    rer.numParties = args.parties
+    rer.numL2GpUnits = args.counties
+    rer.numLeafGpUnits = args.towns
+    rer.leafContests = args.town_contests
+    rer.l2Contests = args.county_contests
+    rer.topContests = args.top_contests
+    rer.candidatesPerContestMin = args.cand_min
+    rer.candidatesPerContestMax = args.cand_max
     print(json.dumps(rer.buildElectionReport(), indent=2))
 
 if __name__ == '__main__':
