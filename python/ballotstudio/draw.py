@@ -113,82 +113,34 @@ class Settings:
 
 gs = Settings()
 
+contestTitleStyle = ParagraphStyle(
+    'contestTitleStyle',
+    fontName=fontsansbold,
+    fontSize=gs.titleFontSize,
+    leading=gs.titleLeading,
+    #backColor=Color(*gs.titleBGColor), #Color(0.85,0.85,0.85,1),
+    leftIndent=1 + (0.1 * inch),
+)
+
+instructionStyle = ParagraphStyle('instructionParagraph')
+
+selectionStyle = ParagraphStyle(
+    'selection',
+    fontName=gs.candidateFontName,
+    fontSize=gs.candidateFontSize,
+    leading=gs.candidateLeading,
+)
+
+selsubStyle = ParagraphStyle(
+    'selsub',
+    fontName=gs.candsubFontName,
+    fontSize=gs.candsubFontSize,
+    leading=gs.candsubLeading,
+)
+
 def setOptionalFields(self, ob):
     for field_name, default_value in self._optional_fields:
         setattr(self, field_name, ob.get(field_name, default_value))
-
-
-
-# class Contest:
-#     def __init__(self, name, title=None, subtitle=None, choices=None):
-#         self.name = name
-#         self.title = title or name
-#         self.subtitle = subtitle
-#         self.choices = choices
-#         self._choices_height = None
-#         self._height = None
-#         self._maxChoiceHeight = None
-#     def height(self):
-#         if self._height is None:
-#             choices = self.choices or []
-#             self._maxChoiceHeight = max([x.height() for x in choices])
-#             ch = self._maxChoiceHeight * len(choices)
-#             ch += 4 # top and bottom border
-#             ch += gs.titleLeading + gs.subtitleLeading
-#             ch += 0.1 * inch # header-choice gap
-#             ch += 0.1 * inch # bottom padding
-#             self._height = ch
-#         return self._height
-#     def draw(self, c, x, y, width=(7.5/2)*inch - 1):
-#         # x,y is a top,left
-#         height = self.height()
-
-#         pos = y - 1.5
-#         # title
-#         c.setStrokeColorRGB(*gs.titleBGColor)
-#         c.setFillColorRGB(*gs.titleBGColor)
-#         c.rect(x, pos - gs.titleLeading, width, gs.titleLeading, fill=1, stroke=0)
-#         c.setFillColorRGB(0,0,0)
-#         c.setStrokeColorRGB(0,0,0)
-#         txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.titleFontSize)
-#         txto.setFont(gs.titleFontName, gs.titleFontSize)
-#         txto.textLines(self.title)
-#         c.drawText(txto)
-#         pos -= gs.titleLeading
-#         # subtitle
-#         c.setStrokeColorCMYK(.1,0,0,0)
-#         c.setFillColorCMYK(.1,0,0,0)
-#         c.rect(x, pos - gs.subtitleLeading, width, gs.subtitleLeading, fill=1, stroke=0)
-#         c.setFillColorRGB(0,0,0)
-#         c.setStrokeColorRGB(0,0,0)
-#         txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.subtitleFontSize)
-#         txto.setFont(gs.subtitleFontName, gs.subtitleFontSize)
-#         txto.textLines(self.subtitle)
-#         c.drawText(txto)
-#         pos -= gs.subtitleLeading
-#         pos -= 0.1 * inch # header-choice gap
-#         c.setFillColorRGB(0,0,0)
-#         c.setStrokeColorRGB(0,0,0)
-#         choices = self.choices or []
-#         for ch in choices:
-#             ch.draw(c, x + 1, pos, width=width - 1)
-#             pos -= self._maxChoiceHeight
-
-#         # top border
-#         c.setStrokeColorRGB(0,0,0)
-#         c.setLineWidth(3)
-#         c.line(x-0.5, y, x + width, y) # -0.5 caps left border 1.0pt line
-#         # left border and bottom border
-#         c.setLineWidth(1)
-#         path = c.beginPath()
-#         path.moveTo(x, y)
-#         path.lineTo(x, y-height)
-#         path.lineTo(x+width, y-height)
-#         c.drawPath(path, stroke=1)
-#         return
-#     def getBubbles(self):
-#         choices = self.choices or []
-#         return {ch.name:ch._bubbleCoords for ch in choices}
 
 
 def gpunitName(gpunit):
@@ -244,14 +196,13 @@ class BallotMeasureSelection:
             c.setFillColorRGB(1,1,1)
         self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
         c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2, fill=rrFill)
-        textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
-        # TODO: assumes one line
+        clo = gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
+        textx = x + clo #gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
         c.setFillColorRGB(0,0,0)
-        txto = c.beginText(textx, y - gs.candidateFontSize)
-        txto.setFont(gs.candidateFontName, gs.candidateFontSize, gs.candidateLeading)
-        txto.textLines(self.selection)
-        c.drawText(txto)
-        ypos = y - gs.candidateLeading
+        cpar = Paragraph(self.selection, selectionStyle)
+        ww, wh = cpar.wrap(width - clo, 100)
+        cpar.drawOn(c, textx, y-wh)
+        ypos = y - wh
         # separator line
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(0.25)
@@ -298,14 +249,33 @@ class CandidateSelection:
         self._bubbleCoords = None
     def height(self, width):
         # TODO: actually check render for width with party and subtitle and all that
-        out = gs.candidateLeading * len(self.candidates)
+        # out = gs.candidateLeading * len(self.candidates)
+        out = 0
+        ballotName = self.ballotName()
+        clo = gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
+        if ballotName:
+            cpar = Paragraph(ballotName, selectionStyle)
+            ww, wh = cpar.wrap(width - clo, 100)
+            out += wh
         if self.subtext:
-            out += gs.candsubLeading
+            cpar = Paragraph(self.subtext, selsubStyle)
+            ww, wh = cpar.wrap(width - clo, 100)
+            out += wh
         if self.IsWriteIn:
             out += gs.candsubLeading
             out += gs.writeInHeight
         out += 0.1 * inch
         return out
+    def ballotName(self):
+        ballotName = None
+        if not self.candidates:
+            if not self.IsWriteIn:
+                ballotName = 'error: no candidates in selection'
+        else:
+            ballotName = self.candidates[0].get('BallotName')
+            if ballotName is None:
+                ballotName = 'error: Ballot Name is required in csel for {}'.format(' '.join(self.CandidateIds))
+        return ballotName
     def draw(self, c, x, y, width):
         capHeight = fonts[gs.candidateFontName].capHeightPerPt * gs.candidateFontSize
         bubbleHeight = min(3*mm, capHeight)
@@ -321,30 +291,22 @@ class CandidateSelection:
             c.setFillColorRGB(1,1,1)
         self._bubbleCoords = (x + gs.bubbleLeftPad, bubbleBottom, gs.bubbleWidth, bubbleHeight)
         c.roundRect(*self._bubbleCoords, radius=bubbleHeight/2, fill=rrFill)
-        textx = x + gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
+        clo = gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
+        textx = x + clo # gs.bubbleLeftPad + gs.bubbleWidth + gs.bubbleRightPad
         # TODO: assumes one line
         c.setFillColorRGB(0,0,0)
-        ballotName = None
-        if not self.candidates:
-            if not self.IsWriteIn:
-                ballotName = 'error: no candidates in selection'
-        else:
-            ballotName = self.candidates[0].get('BallotName')
-            if ballotName is None:
-                ballotName = 'error: Ballot Name is required in csel for {}'.format(' '.join(self.CandidateIds))
+        ballotName = self.ballotName()
         ypos = y
         if ballotName:
-            txto = c.beginText(textx, y - gs.candidateFontSize)
-            txto.setFont(gs.candidateFontName, gs.candidateFontSize, gs.candidateLeading)
-            txto.textLines(ballotName) # TODO: fix for multiple candidate ticket
-            c.drawText(txto)
-            ypos -= gs.candidateLeading
+            cpar = Paragraph(ballotName, selectionStyle)
+            ww, wh = cpar.wrap(width - clo, 100)
+            cpar.drawOn(c, textx, ypos-wh)
+            ypos -= wh
         if self.subtext:
-            txto = c.beginText(textx, ypos - gs.candsubFontSize)
-            txto.setFont(gs.candsubFontName, gs.candsubFontSize, leading=gs.candsubLeading)
-            txto.textLines(self.subtext)
-            c.drawText(txto)
-            ypos -= gs.candsubLeading
+            cpar = Paragraph(self.subtext, selsubStyle)
+            ww, wh = cpar.wrap(width - clo, 100)
+            cpar.drawOn(c, textx, ypos-wh)
+            ypos -= wh
         if self.IsWriteIn:
             txto = c.beginText(textx, ypos - gs.candsubFontSize)
             txto.setFont(gs.candsubFontName, gs.candsubFontSize, leading=gs.candsubLeading)
@@ -465,15 +427,6 @@ class BallotMeasureContest:
         out += 0.1 * inch # header-choice gap
         out += 0.1 * inch # bottom padding
         return out
-
-contestTitleStyle = ParagraphStyle(
-    'contestTitleStyle',
-    fontName=fontsansbold,
-    fontSize=gs.titleFontSize,
-    leading=gs.titleLeading,
-    #backColor=Color(*gs.titleBGColor), #Color(0.85,0.85,0.85,1),
-    leftIndent=1 + (0.1 * inch),
-)
 
 class CandidateContest:
     "NIST 1500-100 v2 ElectionResults.CandidateContest"
@@ -638,15 +591,13 @@ class InstructionsHeader:
             c.drawImage(bubbleImage, textx, pos - imHeight, availableWidth, imHeight)
         pos -= imHeight
 
-        ips = ParagraphStyle('instructionParagraph')
-
-        i1par = Paragraph(self.instruction1, ips)
+        i1par = Paragraph(self.instruction1, instructionStyle)
         ww, wh = i1par.wrap(availableWidth, 100)
         if enable:
             i1par.drawOn(c, textx, pos-wh)
         pos -= wh
         # TODO: warning style
-        i1par = Paragraph(self.warning1, ips)
+        i1par = Paragraph(self.warning1, instructionStyle)
         ww, wh = i1par.wrap(availableWidth, 100)
         if enable:
             i1par.drawOn(c, textx, pos-wh)
@@ -660,7 +611,7 @@ class InstructionsHeader:
             c.drawImage(writeInIm, textx, pos - imHeight, availableWidth, imHeight)
         pos -= imHeight
 
-        i1par = Paragraph(self.instruction2, ips)
+        i1par = Paragraph(self.instruction2, instructionStyle)
         ww, wh = i1par.wrap(availableWidth, 100)
         if enable:
             i1par.drawOn(c, textx, pos-wh)

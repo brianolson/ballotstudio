@@ -205,6 +205,8 @@ class RandElection:
             "PartyId": random.choice(self.parties)["@id"],
             "Profession": randomWordString(3),
         }
+        if random.random() < 0.1:
+            person['FullName'] += ' ' + randomName()
         self.persons.append(person)
         return person
 
