@@ -48,7 +48,7 @@ Dependencies:
        * `sudo yum install -y cmake3 freetype-devel fontconfig-devel libjpeg-turbo-devel openjpeg2-devel libtiff-devel`
        * `(cd poppler/build && cmake3 .. && make pdftoppm)`
      * debianish:
-       * `sudo apt-get install -y libjpeg-dev libopenjp2-7-dev`
+       * `sudo apt-get install -y libjpeg-dev libopenjp2-7-dev libfreetype-dev libfontconfig-dev`
        * `(cd poppler/build && cmake .. && make pdftoppm)`
   * copy `poppler/build/utils/pdftoppm` to somewhere at head of PATH to be found by `cmd/ballotstudio/drawsub.go`
 
@@ -103,5 +103,9 @@ Precinct 1234, Some Town, Statename, page {PAGE} of {PAGES}
 `\n` newlines within the text will be rendered.
 Templated fields within the text are:
 
+* `{DATE}` the end date of the election
+* `{DATES}` the date range of the election
 * `{PAGE}` the current page number
 * `{PAGES}` the total number of pages
+* `{PLACE}` the smallest juristictional name of the election (town/city)
+* `{PLACES}` a string of place names, e.g. "state, county, city"

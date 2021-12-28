@@ -83,7 +83,7 @@ func (ifc *idFixupContext) fixup(er map[string]interface{}) map[string]interface
 		rec.er["@id"] = newid
 	}
 	for _, msg := range ifc.messages {
-		debug("%s", msg)
+		debug("%s\n", msg)
 	}
 	return er
 }

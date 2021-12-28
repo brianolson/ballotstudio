@@ -77,6 +77,7 @@ def makeContestMechanic(name, data, modfn):
 # contestMechanic fn is (RandElection, dict) where dict is the contest JSON
 
 def approvalContestModf(relec, cont):
+    cont["@id"] = relec._contest_id()
     cont["ContestSelection"] = [relec.cselForCandidate(relec.makeCandidate()) for i in range(relec.nCandidates())]
     cont["VotesAllowed"] = len(cont["ContestSelection"])
     return cont
@@ -94,7 +95,7 @@ makeContestMechanic(
 )
 
 def nopContestModf(relec, cont):
-    pass
+    cont["@id"] = relec._contest_id()
 
 makeContestMechanic(
     "plurality",
@@ -109,6 +110,7 @@ makeContestMechanic(
 )
 
 def ballotmeasureContestModf(relec, cont):
+    cont["@id"] = relec._bmcont_id()
     cont["ContestSelection"] = relec.yesOrNoBallotMeasureSelections()
     cont["ConStatement"] = randomWordString(10)
     cont["ProStatement"] = randomWordString(10)
@@ -277,7 +279,7 @@ class RandElection:
         '''Make a Contest, its candidates, and office'''
         contest = {
             # required
-            "@id": self._contest_id(),
+            # "@id": self._contest_id(),
             #"@type": "ElectionResults.CandidateContest",
             "Name": randomWordString(3),
             "ElectionDistrictId": gpunit["@id"],

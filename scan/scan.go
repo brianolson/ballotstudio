@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -9,10 +10,13 @@ import (
 	"image/png"
 	_ "image/png"
 	"io"
+	"log"
 	"math"
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 func maybeFail(err error, format string, args ...interface{}) {
@@ -1049,6 +1053,7 @@ func (s *Scanner) debugScannedBubbles(it *image.YCbCr) error {
 }
 
 type DrawSettings struct {
+	// PageSize: [width pt, height pt],
 	PageSize   []float64 `json:"pagesize"`
 	PageMargin float64   `json:"pageMargin"`
 	// TODO: lots of fields ignored
@@ -1063,5 +1068,98 @@ type BubblesJson struct {
 	DrawSettings *DrawSettings `json:"draw_settings"`
 
 	// Bubbles is a list per ballot style, indexed in the same order as the source document ballot styles.
+	// .Bubbles[ballotStyleIndex][contest @id][selection @id][x y width height]
 	Bubbles []Contest `json:"bubbles"`
+
+	// Headers[ballotStyleIndex][page number string][left top right bottom]
+	// page coords are (0,0) bottom left, in points (1/72 inch)
+	Headers []map[string][]float64
+}
+
+// page is 1-indexed
+func (bj BubblesJson) Header(ballotStyleIndex, page int) (left, top, right, bottom float64, err error) {
+	if ballotStyleIndex < 0 || ballotStyleIndex > len(bj.Headers) {
+		err = fmt.Errorf("invalid ballot style %d of %d", ballotStyleIndex, len(bj.Headers))
+		return
+	}
+	bsh := bj.Headers[ballotStyleIndex]
+	pstr := strconv.Itoa(page)
+	rect, ok := bsh[pstr]
+	if !ok {
+		keys := make([]string, len(bsh))
+		pos := 0
+		for k := range bsh {
+			keys[pos] = k
+			pos++
+		}
+		err = fmt.Errorf("style=%d, invalid page %d of {%s}", ballotStyleIndex, page, strings.Join(keys, " "))
+		return
+	}
+	left = rect[0]
+	top = rect[1]
+	right = rect[2]
+	bottom = rect[3]
+	return
+}
+
+type imSubImage interface {
+	SubImage(r image.Rectangle) image.Image
+}
+
+func ExtractHeaders(bubblesJsonStr []byte, pngbytes [][]byte) (headers []image.Image, err error) {
+	var bubbles BubblesJson
+	err = json.Unmarshal(bubblesJsonStr, &bubbles)
+	if err != nil {
+		err = fmt.Errorf("bad bubble json, %v", err)
+		return
+	}
+	headers = make([]image.Image, 0, len(pngbytes))
+	widthPt := bubbles.DrawSettings.PageSize[0]
+	heightPt := bubbles.DrawSettings.PageSize[1]
+	for ballotStyleIndex, bsh := range bubbles.Headers {
+		keys := make([]string, len(bsh))
+		pos := 0
+		for k := range bsh {
+			keys[pos] = k
+			pos++
+		}
+		sort.Strings(keys)
+
+		var orect image.Rectangle
+		for _, pagestr := range keys {
+			// page coords in pt, (0,0) (left,bot)
+			var headerLeftTopRightBot []float64
+			headerLeftTopRightBot = bsh[pagestr]
+			var bp int
+			bp, err = strconv.Atoi(pagestr)
+			if err != nil {
+				err = fmt.Errorf("bs[%d] bad page %#v, %v", ballotStyleIndex, pagestr, err)
+				return
+			}
+			var orig image.Image
+			var format string
+			orig, format, err = image.Decode(bytes.NewReader(pngbytes[ballotStyleIndex]))
+			if err != nil {
+				err = fmt.Errorf("bad page[%d] png, %v", ballotStyleIndex, err)
+				return
+			}
+			osi, ok := orig.(imSubImage)
+			if !ok {
+				log.Printf("bsi %d could not SubImage", ballotStyleIndex)
+			}
+			ib := orig.Bounds()
+			widthPx := ib.Max.X - ib.Min.X
+			heightPx := ib.Max.Y - ib.Min.Y
+			xscale := float64(widthPx) / float64(widthPt)
+			yscale := float64(heightPx) / float64(heightPt)
+			orect.Min.X = int((headerLeftTopRightBot[0] * xscale) + float64(ib.Min.X))
+			orect.Min.Y = ib.Max.Y - int((headerLeftTopRightBot[1]*yscale)+float64(ib.Min.Y))
+			orect.Max.X = int((headerLeftTopRightBot[2] * xscale) + float64(ib.Min.X))
+			orect.Max.Y = ib.Max.Y - int((headerLeftTopRightBot[3]*yscale)+float64(ib.Min.Y))
+			oi := osi.SubImage(orect)
+			log.Printf("bsi %d bp %d format %s, %s orect %s oi %s", ballotStyleIndex, bp, format, ib, orect, oi.Bounds())
+			headers = append(headers, oi)
+		}
+	}
+	return
 }

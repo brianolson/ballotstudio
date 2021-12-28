@@ -82,6 +82,7 @@ var pdfPathRe *regexp.Regexp
 var bubblesPathRe *regexp.Regexp
 var pngPathRe *regexp.Regexp
 var pngPagePathRe *regexp.Regexp
+var headerPngPagePathRe *regexp.Regexp
 var scanPathRe *regexp.Regexp
 var docPathRe *regexp.Regexp
 
@@ -90,6 +91,7 @@ func init() {
 	bubblesPathRe = regexp.MustCompile(`^/election/(\d+)_bubbles\.json$`)
 	pngPathRe = regexp.MustCompile(`^/election/(\d+)\.png$`)
 	pngPagePathRe = regexp.MustCompile(`^/election/(\d+)\.(\d+)\.png$`)
+	headerPngPagePathRe = regexp.MustCompile(`^/election/header(\d+)\.(\d+)\.png$`)
 	scanPathRe = regexp.MustCompile(`^/election/(\d+)/scan$`)
 	docPathRe = regexp.MustCompile(`^/election/(\d+)(.json)?$`)
 }
@@ -207,6 +209,34 @@ func (sh *StudioHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(200)
 		w.Write(pngbytes[0])
+		return
+	}
+	// `^/election/header(\d+)\.(\d+)\.png$`
+	m = headerPngPagePathRe.FindStringSubmatch(path)
+	if m != nil {
+		pagenum, err := strconv.Atoi(string(m[2]))
+		if maybeerr(w, err, 400, "bad page") {
+			return
+		}
+		bothob, err := sh.getPdf(r.Context(), m[1], redraw)
+		if err != nil {
+			he := err.(*httpError)
+			maybeerr(w, he.err, he.code, he.msg)
+			return
+		}
+		pngbytes, err := sh.getPng(r.Context(), m[1], redraw)
+		if err != nil {
+			he := err.(*httpError)
+			maybeerr(w, he.err, he.code, he.msg)
+			return
+		}
+		if pagenum > len(pngbytes) {
+			texterr(w, 400, "bad page")
+		}
+		// TODO: trim page png to header region based on bubbles.json info
+		w.Header().Set("Content-Type", "image/png")
+		w.WriteHeader(200)
+		w.Write(pngbytes[pagenum])
 		return
 	}
 	// `^/election/(\d+)/scan$`
@@ -546,14 +576,6 @@ func sigtermHandler(c <-chan os.Signal, server *http.Server, cf func()) {
 	}
 }
 
-func exists(path string) (out string, ok bool) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return path, true
-	}
-	return "", false
-}
-
 func main() {
 	var listenAddr string
 	flag.StringVar(&listenAddr, "http", ":8180", "interface:port to listen on, default \":8180\"")
@@ -643,23 +665,9 @@ func main() {
 	defer cf()
 	go gcThread(ctx, edb, 57*time.Minute)
 
-	if len(drawBackend) == 0 {
-		var drawserver draw.DrawServer
-		if flaskPath == "" {
-			for _, fp := range []string{"./flask", "bsvenv/bin/flask"} {
-				var ok bool
-				flaskPath, ok = exists(fp)
-				if ok {
-					break
-				}
-			}
-		}
-		drawserver.FlaskPath = flaskPath
-		err = drawserver.Start()
-		maybefail(err, "could not start draw server, %v", err)
-		drawBackend = drawserver.BackendUrl()
-		defer drawserver.Stop()
-	}
+	drawBackend, backendCf, err := draw.EnsureBackend(drawBackend, flaskPath)
+	maybefail(err, "could not start draw server, %v", err)
+	defer backendCf()
 
 	var archiver ImageArchiver
 	if imageArchiveDir != "" {

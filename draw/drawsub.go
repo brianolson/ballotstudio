@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -211,4 +212,42 @@ func debug(format string, args ...interface{}) {
 		return
 	}
 	fmt.Fprintf(DebugOut, format, args...)
+}
+
+func nop() {
+}
+
+func exists(path string) (out string, ok bool) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return path, true
+	}
+	return "", false
+}
+
+func EnsureBackend(drawBackend, flaskPath string) (backendUrl string, cf func(), err error) {
+	if len(drawBackend) != 0 {
+		return drawBackend, nop, nil
+	}
+	if flaskPath == "" {
+		for _, fp := range []string{"./flask", "bsvenv/bin/flask"} {
+			var ok bool
+			flaskPath, ok = exists(fp)
+			if ok {
+				break
+			}
+		}
+	}
+	var drawserver DrawServer
+	drawserver.FlaskPath = flaskPath
+	err = drawserver.Start()
+	if err != nil {
+		return "", nop, err
+	}
+	cf = func() {
+		drawserver.Stop()
+	}
+	backendUrl = drawserver.BackendUrl()
+	log.Printf("started draw server %d %s\n", drawserver.cmd.Process.Pid, backendUrl)
+	return
 }

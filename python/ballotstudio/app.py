@@ -175,8 +175,7 @@ def demoracebubbles():
     bubbles = ep.getBubbles()
     return bubbles, 200, {"Content-Type":"application/json"}
 
-@app.route('/random.pdf')
-def randracepdf():
+def _random_election():
     rer = randrace.RandElection()
     rer.numParties = int(request.args.get('parties', 3))
     rer.numL2GpUnits = int(request.args.get('counties', 2))
@@ -186,7 +185,16 @@ def randracepdf():
     rer.topContests = int(request.args.get('top-contests', 2))
     rer.candidatesPerContestMin = int(request.args.get('cand-min', 3))
     rer.candidatesPerContestMax = int(request.args.get('cand-max', 9))
-    er = rer.buildElectionReport()
+    return rer.buildElectionReport()
+
+@app.route('/random.js')
+def randracejs():
+    er = _random_election()
+    return er, 200, {"Content-Type":"application/json"}
+
+@app.route('/random.pdf')
+def randracepdf():
+    er = _random_election()
     elections = er.get('Election', [])
     el = elections[0]
     ep = ElectionPrinter(er, el)

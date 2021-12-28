@@ -20,7 +20,7 @@ func maybefail(err error, format string, args ...interface{}) {
 }
 
 func main() {
-	//data.DebugOut = os.Stderr
+	data.DebugOut = os.Stderr
 	dec := json.NewDecoder(os.Stdin)
 	var er map[string]interface{}
 	err := dec.Decode(&er)
