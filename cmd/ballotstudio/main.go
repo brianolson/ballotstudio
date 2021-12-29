@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"image/png"
 	"io"
 	"io/ioutil"
 	"log"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/brianolson/ballotstudio/data"
 	"github.com/brianolson/ballotstudio/draw"
+	"github.com/brianolson/ballotstudio/scan"
 	"github.com/brianolson/login/login"
 )
 
@@ -214,6 +216,7 @@ func (sh *StudioHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// `^/election/header(\d+)\.(\d+)\.png$`
 	m = headerPngPagePathRe.FindStringSubmatch(path)
 	if m != nil {
+		log.Printf("header[%#v][%#v]", m[1], m[2])
 		pagenum, err := strconv.Atoi(string(m[2]))
 		if maybeerr(w, err, 400, "bad page") {
 			return
@@ -230,13 +233,16 @@ func (sh *StudioHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			maybeerr(w, he.err, he.code, he.msg)
 			return
 		}
-		if pagenum > len(pngbytes) {
+		if pagenum >= len(pngbytes) {
 			texterr(w, 400, "bad page")
 		}
-		// TODO: trim page png to header region based on bubbles.json info
+		headers, err := scan.ExtractHeaders(bothob.BubblesJson, pngbytes)
+		if maybeerr(w, err, 500, "ExtractHeaders fail") {
+			return
+		}
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(200)
-		w.Write(pngbytes[pagenum])
+		png.Encode(w, headers[pagenum])
 		return
 	}
 	// `^/election/(\d+)/scan$`

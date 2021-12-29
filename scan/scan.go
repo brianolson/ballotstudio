@@ -1127,25 +1127,26 @@ func ExtractHeaders(bubblesJsonStr []byte, pngbytes [][]byte) (headers []image.I
 
 		var orect image.Rectangle
 		for _, pagestr := range keys {
+			pageno := len(headers)
 			// page coords in pt, (0,0) (left,bot)
 			var headerLeftTopRightBot []float64
 			headerLeftTopRightBot = bsh[pagestr]
 			var bp int
 			bp, err = strconv.Atoi(pagestr)
 			if err != nil {
-				err = fmt.Errorf("bs[%d] bad page %#v, %v", ballotStyleIndex, pagestr, err)
+				err = fmt.Errorf("bs[%d] bad page %#v, %v", pageno, pagestr, err)
 				return
 			}
 			var orig image.Image
 			var format string
-			orig, format, err = image.Decode(bytes.NewReader(pngbytes[ballotStyleIndex]))
+			orig, format, err = image.Decode(bytes.NewReader(pngbytes[pageno]))
 			if err != nil {
-				err = fmt.Errorf("bad page[%d] png, %v", ballotStyleIndex, err)
+				err = fmt.Errorf("bad page[%d] png, %v", pageno, err)
 				return
 			}
 			osi, ok := orig.(imSubImage)
 			if !ok {
-				log.Printf("bsi %d could not SubImage", ballotStyleIndex)
+				log.Printf("page[%d] could not SubImage", pageno)
 			}
 			ib := orig.Bounds()
 			widthPx := ib.Max.X - ib.Min.X
@@ -1157,7 +1158,7 @@ func ExtractHeaders(bubblesJsonStr []byte, pngbytes [][]byte) (headers []image.I
 			orect.Max.X = int((headerLeftTopRightBot[2] * xscale) + float64(ib.Min.X))
 			orect.Max.Y = ib.Max.Y - int((headerLeftTopRightBot[3]*yscale)+float64(ib.Min.Y))
 			oi := osi.SubImage(orect)
-			log.Printf("bsi %d bp %d format %s, %s orect %s oi %s", ballotStyleIndex, bp, format, ib, orect, oi.Bounds())
+			log.Printf("headers[%d] bsi %d bp %d format %s, %s orect %s oi %s", len(headers), ballotStyleIndex, bp, format, ib, orect, oi.Bounds())
 			headers = append(headers, oi)
 		}
 	}
