@@ -1067,13 +1067,30 @@ type Contest map[string]ContestSelections
 type BubblesJson struct {
 	DrawSettings *DrawSettings `json:"draw_settings"`
 
+	// BsData should be preferred in the future
+	// .BsData[ballotStyleIndex].GpUnitIds = [gp unit id str, ...]
+	// .BsData[ballotStyleIndex].Bubbles[contest id str][selection id str] = [left, bottom, width, height]
+	// .BsData[ballotStyleIndex].Headers[page number str] = [left, top, right, bottom]
+	BsData []BsData `json:"bsdata"`
+
 	// Bubbles is a list per ballot style, indexed in the same order as the source document ballot styles.
 	// .Bubbles[ballotStyleIndex][contest @id][selection @id][x y width height]
+	// Deprecated, use .BsData[ballotStyleIndex].Bubbles instead
 	Bubbles []Contest `json:"bubbles"`
 
 	// Headers[ballotStyleIndex][page number string][left top right bottom]
 	// page coords are (0,0) bottom left, in points (1/72 inch)
-	Headers []map[string][]float64
+	// Deprecated, use .BsData[ballotStyleIndex].Headers instead
+	Headers []map[string][]float64 `json:"headers"`
+}
+
+type BsData struct {
+	GpUnitIds []string `json:"GpUnitIds"`
+
+	Bubbles Contest `json:"bubbles"`
+
+	// Header map[page number string][]float64{left, top, right, bottom}
+	Header map[string][]float64 `json:"headers"`
 }
 
 // page is 1-indexed

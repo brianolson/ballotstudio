@@ -1061,7 +1061,17 @@ class ElectionPrinter:
             raise Exception('No BallotStyles drawn for selectors {!r}'.format(selectors))
     def getBubbles(self):
         """{
-"pagesize": (width pt, height pt),
+"bsdata": [
+  // entry per ballot style
+  {
+    "GpUnitIds": [str, ...],
+    "bubbles": {
+      contest id str: {
+        selection id str: [left, bottom, width, height], // ...
+      }, // ...
+    }, // ...
+  }, // ...
+],
 "bubbles": [
   // entry per ballot style
   {
@@ -1072,12 +1082,25 @@ class ElectionPrinter:
 ],
 }
 """
+        # bubbles["bsdata"][ballotStyleIndex]["GpUnitIds"] = [str, ...]
+        # bubbles["bsdata"][ballotStyleIndex]["bubbles"][contest id str][selection id str] = [left, bottom, width, height]
+        # bubbles["bsdata"][ballotStyleIndex]["headers"][page number str] = [left, top, right, bottom]
+        # TODO: fix docstring above to reflect data below
         bsdata = []
+        oneheader = None
         for bs in self.ballot_styles:
+            headers = bs.getHeaderBoxes()
+            for hb in header.values():
+                if oneheader is None:
+                    oneheader = hb
+                else:
+                    if oneheader != hb:
+                        # TODO: two-pass system to make them all the same size as the largest header.
+                        raise Exception('header box {!r} != {!r}'.format(oneheader, hb))
             ob = {
                 'GpUnitIds': bs.bs['GpUnitIds'],
                 'bubbles': bs.getBubbles(),
-                'headers': bs.getHeaderBoxes(),
+                'headers': headers,
             }
             bsdata.append(ob)
         return {
