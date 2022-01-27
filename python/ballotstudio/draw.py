@@ -1090,7 +1090,7 @@ class ElectionPrinter:
         oneheader = None
         for bs in self.ballot_styles:
             headers = bs.getHeaderBoxes()
-            for hb in header.values():
+            for hb in headers.values():
                 if oneheader is None:
                     oneheader = hb
                 else:

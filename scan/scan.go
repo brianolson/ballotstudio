@@ -3,6 +3,7 @@ package scan
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -91,6 +92,33 @@ func otsuThreshold(hist []uint) uint8 {
 	return uint8(best)
 }
 
+// population standard deviation
+func stddev(they []float64) (mean, out float64) {
+	sum := they[0]
+	for _, v := range they[1:] {
+		sum += v
+	}
+	mean = sum / float64(len(they))
+	ssd := float64(0.0)
+	for _, v := range they {
+		dv := v - mean
+		ssd += dv * dv
+	}
+	out = math.Sqrt(ssd / float64(len(they)))
+	return
+}
+
+// point-line-distance population standard deviation
+// the line is the 'mean', []they is already distance to mean
+func pldstddev(they []float64) (out float64) {
+	ssd := float64(0.0)
+	for _, v := range they {
+		ssd += v * v
+	}
+	out = math.Sqrt(ssd / float64(len(they)))
+	return
+}
+
 const darkPxCountThreshold = 4
 
 // Search the Y compoment of YCbCr for a left edge
@@ -122,10 +150,12 @@ func yLeftLineFind(it *image.YCbCr, ySeekCenter int, threshold uint8) (edgeX int
 	return rightEdge - 1
 }
 
+// scan a block 3 px wide and 10 px tall
 func yTopLineFind(it *image.YCbCr, xSeekCenter int, threshold uint8) (edgeY int) {
 	darkPxCount := 0
 	topEdge := 0
 	bottomEdge := 10
+	// initial sum
 	for y := topEdge; y < bottomEdge; y++ {
 		for x := xSeekCenter - 1; x < xSeekCenter+2; x++ {
 			if it.Y[(it.YStride*y)+x] < threshold {
@@ -133,6 +163,8 @@ func yTopLineFind(it *image.YCbCr, xSeekCenter int, threshold uint8) (edgeY int)
 			}
 		}
 	}
+	// progressive seek, subtract top px, add bottom px
+	// continue until threshold exceeded
 	for bottomEdge < it.Rect.Max.Y && darkPxCount < darkPxCountThreshold {
 		for x := xSeekCenter - 1; x < xSeekCenter+2; x++ {
 			y := topEdge
@@ -192,6 +224,16 @@ type point struct {
 type AffineTransform interface {
 	TransformInt(x, y int) (int, int)
 	Transform(x, y float64) (float64, float64)
+}
+
+type NopTransform struct {
+}
+
+func (mt NopTransform) TransformInt(x, y int) (int, int) {
+	return x, y
+}
+func (mt NopTransform) Transform(x, y float64) (float64, float64) {
+	return x, y
 }
 
 type MatrixTransform struct {
@@ -282,11 +324,10 @@ func (t transform) Transform(origx, origy float64) (x, y float64) {
 }
 
 func colorY(c color.Color) uint8 {
-	r, g, b, a := c.RGBA()
-	sa := a >> 8
-	br := uint8(r / sa)
-	bg := uint8(g / sa)
-	bb := uint8(b / sa)
+	r, g, b, _ := c.RGBA()
+	br := uint8(r >> 8)
+	bg := uint8(g >> 8)
+	bb := uint8(b >> 8)
 	y, _, _ := color.RGBToYCbCr(br, bg, bb)
 	return y
 }
@@ -295,6 +336,7 @@ type Scanner struct {
 	Bj BubblesJson
 
 	orig         image.Image
+	orect        image.Rectangle
 	origPxPerPt  float64
 	origTopLeft  point
 	origTopRight point
@@ -303,7 +345,12 @@ type Scanner struct {
 	hist       []uint
 	scanThresh uint8
 
-	origToScanned AffineTransform
+	// hotspots are coords within orig.Bounds() ((0,0)-(w,h))
+	hotspots     []point
+	hotspotSnaps [][hotspotSize * hotspotSize]uint8
+
+	transformTarget image.Image
+	origToScanned   AffineTransform
 
 	DebugOut io.Writer
 
@@ -337,11 +384,26 @@ func (s *Scanner) ReadOrigImage(origname string) error {
 	return s.SetOrigImage(orig)
 }
 
+func imageYHist(orig image.Image, orect image.Rectangle) uint8 {
+	var hist [256]uint
+	for iy := orect.Min.Y; iy < orect.Max.Y; iy++ {
+		for ix := orect.Min.X; ix < orect.Max.X; ix++ {
+			y := colorY(orig.At(ix, iy))
+			hist[y]++
+		}
+	}
+	return otsuThreshold(hist[:])
+}
+
 func (s *Scanner) SetOrigImage(orig image.Image) error {
 	s.orig = orig
 	orect := orig.Bounds()
+	s.orect = orect
 	if orect.Min.X != 0 || orect.Min.Y != 0 {
 		return fmt.Errorf("nonzero origin for original pic. WAT?\n")
+	}
+	if len(s.Bj.DrawSettings.PageSize) < 2 {
+		return errors.New("no bubbles draw settings page size")
 	}
 	s.debug("orig %T %v\n", orig, orect)
 	origPxPerPtX := float64(orect.Max.X-orect.Min.X) / s.Bj.DrawSettings.PageSize[0]
@@ -360,14 +422,8 @@ func (s *Scanner) SetOrigImage(orig image.Image) error {
 	}
 	s.debug("top line orig (%d,%d)-(%d,%d)\n", s.origTopLeft.x, s.origTopLeft.y, s.origTopRight.x, s.origTopRight.y)
 
-	var hist [256]uint
-	for iy := orect.Min.Y; iy < orect.Max.Y; iy++ {
-		for ix := orect.Min.X; ix < orect.Max.X; ix++ {
-			y := colorY(orig.At(ix, iy))
-			hist[y]++
-		}
-	}
-	s.origYThresh = otsuThreshold(hist[:])
+	s.origYThresh = imageYHist(orig, orect)
+	s.hotspots, s.hotspotSnaps = findImageHotspots(numHeaderHotspots, s.orig, s.origYThresh)
 	return nil
 }
 
@@ -426,17 +482,24 @@ func (s *Scanner) DebugOrigBubbles(outpath string) error {
 }
 
 const hotspotSize = 15
+const hotspotBytes = hotspotSize * hotspotSize
 
 // check potential hotspot center (tx,ty) for quality
+// scratch should be [hotspotSize*hotspotSize]uint8
 func (s *Scanner) origImageHotspotsQuality(tx, ty int, scratch []uint8) int {
-	// scratch should be [hotspotSize*hotspotSize]bool
+	return imageHotspotQuality(s.orig, s.origYThresh, tx, ty, scratch)
+}
+
+// check potential hotspot center (tx,ty) for quality
+// scratch should be [hotspotSize*hotspotSize]uint8
+func imageHotspotQuality(orig image.Image, yThresh uint8, tx, ty int, scratch []uint8) int {
 
 	mx := tx - (hotspotSize / 2)
 	my := ty - (hotspotSize / 2)
 	for iy := 0; iy < hotspotSize; iy++ {
 		for ix := 0; ix < hotspotSize; ix++ {
-			y := colorY(s.orig.At(mx+ix, my+iy))
-			if y >= s.origYThresh {
+			y := colorY(orig.At(mx+ix, my+iy))
+			if y >= yThresh {
 				scratch[(hotspotSize*iy)+ix] = 1
 			} else {
 				scratch[(hotspotSize*iy)+ix] = 0
@@ -473,33 +536,30 @@ func (s *Scanner) origImageHotspotsQuality(tx, ty int, scratch []uint8) int {
 	return int(fx + fy)
 }
 
-const nHotspots = 20
+const pageNHotspots = 20
 
 // returns hotspot center points [](x,y)
-func (s *Scanner) findOrigImageHotspots() []point {
+func findImageHotspots(nHotspots int, orig image.Image, yThresh uint8) (spots []point, snaps [][hotspotBytes]uint8) {
 	// find ~20 spots 16x16 px with dx feature and dy feature
-	orect := s.orig.Bounds()
+	orect := orig.Bounds()
 
 	width := orect.Max.X - orect.Min.X
 	height := orect.Max.Y - orect.Min.Y
 
-	spots := make([]point, 0, nHotspots)
-	//scores := make([]int, 0, nHotspots)
-	//scratch := make([]uint8, hotspotSize*hotspotSize)
-	var scores [nHotspots]int
+	spots = make([]point, 0, nHotspots)
+	scores := make([]int, nHotspots)
 	var scratch [hotspotSize * hotspotSize]uint8
 	// check 5x what we want, keep the best
 	checkCount := 0
 	for checkCount < nHotspots*5 {
 		tx := rand.Intn(width-(2*hotspotSize)) + hotspotSize
 		ty := rand.Intn(height-(2*hotspotSize)) + hotspotSize
-		score := s.origImageHotspotsQuality(tx, ty, scratch[:])
+		score := imageHotspotQuality(orig, yThresh, tx, ty, scratch[:])
 		if score < 0 {
 			continue
 		}
 		if len(spots) == 0 {
 			spots = append(spots, point{tx, ty})
-			//scores = append(scores, score)
 			scores[0] = score
 			continue
 		}
@@ -511,7 +571,6 @@ func (s *Scanner) findOrigImageHotspots() []point {
 					scores[pos+1] = scores[pos]
 					spots[pos+1] = spots[pos]
 				} else if (pos + 1) < nHotspots {
-					//scores = append(scores, scores[pos])
 					scores[pos+1] = scores[pos]
 					spots = append(spots, spots[pos])
 				}
@@ -525,13 +584,31 @@ func (s *Scanner) findOrigImageHotspots() []point {
 			pos--
 		}
 		if pos == (len(spots)-1) && (pos+1) < nHotspots {
-			//scores = append(scores, scores[pos])
 			scores[pos+1] = score
 			spots = append(spots, point{tx, ty})
 		}
 		checkCount++
 	}
-	return spots
+
+	snaps = make([][hotspotSize * hotspotSize]uint8, len(spots))
+	for spoti, spot := range spots {
+		// copy thresholded orig to scratch
+		mx := spot.x - (hotspotSize / 2)
+		my := spot.y - (hotspotSize / 2)
+		scratch := snaps[spoti][:]
+		for iy := 0; iy < hotspotSize; iy++ {
+			for ix := 0; ix < hotspotSize; ix++ {
+				sc := orig.At(mx+ix, my+iy)
+				y := colorY(sc)
+				if y >= yThresh {
+					scratch[(hotspotSize*iy)+ix] = 1
+				} else {
+					scratch[(hotspotSize*iy)+ix] = 0
+				}
+			}
+		}
+	}
+	return
 }
 
 // copy source data in hotspots to image so we can see what targets we're picking
@@ -561,26 +638,28 @@ func (s *Scanner) hotspotsDebugImage(spots []point, it *image.YCbCr) *image.RGBA
 }
 
 // return map[contest @id]map[csel @id](bool marked)
-func (s *Scanner) ReadScannedImage(fname string) (marked map[string]map[string]bool, err error) {
-	r, err := os.Open(fname)
+func (s *Scanner) ReadScannedImage(fname string) (marked map[string]map[string]bool, score float64, err error) {
+	var r io.ReadCloser
+	r, err = os.Open(fname)
 	if err != nil {
-		return nil, err
+		return
 	}
 	defer r.Close()
 	im, _, err := image.Decode(r)
 	if err != nil {
-		return nil, err
+		return
 	}
 	return s.ProcessScannedImage(im)
 }
 
 // return map[contest @id]map[csel @id](bool marked)
-func (s *Scanner) ProcessScannedImage(im image.Image) (marked map[string]map[string]bool, err error) {
+func (s *Scanner) ProcessScannedImage(im image.Image) (marked map[string]map[string]bool, score float64, err error) {
 	switch it := im.(type) {
 	case *image.YCbCr:
 		return s.processYCbCr(it)
 	default:
-		return nil, fmt.Errorf("unknown image type %T", im)
+		err = fmt.Errorf("unknown image type %T", im)
+		return
 	}
 }
 
@@ -591,52 +670,122 @@ func fmax(a, b float64) float64 {
 	return b
 }
 
+func nopdebug(format string, args ...interface{}) {
+}
+
+var NoLineError = errors.New("no line found")
+
+func linePoints(topPoints []point, debug func(string, ...interface{})) (slope, intercept, dstddev float64, pointsout []point, err error) {
+	if debug == nil {
+		debug = nopdebug
+	}
+	pointsout = topPoints
+	for len(topPoints) > 20 {
+		slope, intercept = ordinaryLeastSquares(topPoints)
+		plds := make([]float64, len(topPoints))
+		worstd := 0.0
+		for pti, pt := range topPoints {
+			d := pointLineDistance(slope, intercept, pt.x, pt.y)
+			plds[pti] = d
+			if d > worstd {
+				worstd = d
+			}
+		}
+		dstddev = pldstddev(plds)
+		debug("    top line %d points, slope=%f intercept=%f, d std %f worst %f\n", len(topPoints), slope, intercept, dstddev, worstd)
+		didDrop := false
+		i := 0
+		dropthresh := dstddev
+		if dropthresh < 2 {
+			dropthresh = 2
+		}
+		for i < len(plds) {
+			d := plds[i]
+			if d > dropthresh {
+				debug("drop topPoints[%d]\n", i)
+				// drop outliar
+				didDrop = true
+				copy(plds[i:], plds[i+1:])
+				copy(topPoints[i:], topPoints[i+1:])
+				plds = plds[:len(plds)-1]
+				topPoints = topPoints[:len(topPoints)-1]
+				pointsout = topPoints
+			} else {
+				i++
+			}
+		}
+		if !didDrop {
+			return
+		}
+		slope, intercept = ordinaryLeastSquares(topPoints)
+		worstd = 0.0
+		for pti, pt := range topPoints {
+			d := pointLineDistance(slope, intercept, pt.x, pt.y)
+			plds[pti] = d
+			if d > worstd {
+				worstd = d
+			}
+		}
+		dstddev = pldstddev(plds)
+	}
+	debug("too few points, no line found")
+	err = NoLineError
+	return
+}
+
 // find the top border and calculate an initial transform based on it
 func (s *Scanner) topLineYCbCr(it *image.YCbCr) error {
+	if s.origToScanned != nil && s.transformTarget == it {
+		s.debug("topLineYCbCr skipped, already have origToScanned\n")
+		return nil
+	}
+	s.debug("topLineYCbCr NOT skipped it=%p s.tt=%p\n", it, s.transformTarget)
+	s.transformTarget = it
 	misscount := 0
 	hitcount := 0
 	topPoints := make([]point, 0, 100)
-	for x := 100; x < it.Rect.Max.X-100; x += 50 {
+	for x := 10; x < it.Rect.Max.X-100; x += 25 {
 		yte := yTopLineFind(it, x, s.scanThresh)
 		if yte < it.Rect.Max.Y/2 {
-			//s.debug("[%d,%d]\n", x, yte)
+			s.debug("[%d,%d]\n", x, yte)
 			topPoints = append(topPoints, point{x, yte})
 			hitcount++
 		} else {
 			misscount++
 		}
 	}
-	slope, intercept := ordinaryLeastSquares(topPoints)
-	s.debug("top line %d hit %d miss, slope=%f intercept=%f\n", hitcount, misscount, slope, intercept)
-	worstd := 0.0
-	for _, pt := range topPoints {
-		d := pointLineDistance(slope, intercept, pt.x, pt.y)
-		if d > worstd {
-			worstd = d
-		}
+	slope, intercept, dstddev, topPoints, err := linePoints(topPoints, s.debug)
+	if err != nil {
+		return err
 	}
-	x := topPoints[0].x
-	y := topPoints[0].y
+	x := topPoints[1].x
+	y := topPoints[1].y
 	const step = 5
+	dthresh := dstddev
+	if dthresh < 2 {
+		dthresh = 2
+	}
 	for true {
 		nx := x - step
 		yte := yTopLineFind(it, nx, s.scanThresh)
 		d := pointLineDistance(slope, intercept, nx, yte)
-		if d > worstd {
+		s.debug("TL corner seek: (%d,%d) %f\n", nx, yte, d)
+		if d > dthresh {
 			break
 		}
 		x = nx
 		y = yte
 	}
 	topLeft := point{x, y}
-	last := len(topPoints) - 1
+	last := len(topPoints) - 2
 	x = topPoints[last].x
 	y = topPoints[last].y
 	for true {
 		nx := x + step
 		yte := yTopLineFind(it, nx, s.scanThresh)
 		d := pointLineDistance(slope, intercept, nx, yte)
-		if d > worstd {
+		s.debug("TR corner seek: (%d,%d) %f\n", nx, yte, d)
+		if d > dthresh {
 			break
 		}
 		x = nx
@@ -650,53 +799,38 @@ func (s *Scanner) topLineYCbCr(it *image.YCbCr) error {
 	return nil
 }
 
-func (s *Scanner) refineTransform(it *image.YCbCr) error {
-	spots := s.findOrigImageHotspots()
+func (s *Scanner) refineTransform(it *image.YCbCr) (score float64, err error) {
 	var debugi *image.RGBA
 	if s.TargetsPngPath != "" {
-		debugi = s.hotspotsDebugImage(spots, it)
+		debugi = s.hotspotsDebugImage(s.hotspots, it)
 	}
 
-	sources := make([]FPoint, len(spots))
-	dests := make([]FPoint, len(spots))
+	sources := make([]FPoint, len(s.hotspotSnaps)) // source coord
+	dests := make([]FPoint, len(s.hotspotSnaps))   // dest coord
+	ssds := make([]int, len(s.hotspotSnaps))       // how good/bad was the fit?
 
-	var scratch [hotspotSize * hotspotSize]uint8
-	for spoti, spot := range spots {
-		// copy thresholded orig to scratch
+	for spoti, scratch := range s.hotspotSnaps {
+		spot := s.hotspots[spoti]
 		mx := spot.x - (hotspotSize / 2)
 		my := spot.y - (hotspotSize / 2)
-		for iy := 0; iy < hotspotSize; iy++ {
-			for ix := 0; ix < hotspotSize; ix++ {
-				sc := s.orig.At(mx+ix, my+iy)
-				y := colorY(sc)
-				if y >= s.origYThresh {
-					scratch[(hotspotSize*iy)+ix] = 1
-				} else {
-					scratch[(hotspotSize*iy)+ix] = 0
-				}
-				if debugi != nil {
-					debugi.Set(ix+(hotspotSize*4), iy+(hotspotSize*spoti), color.Gray{scratch[(hotspotSize*iy)+ix] * 255})
-				}
-			}
-		}
-		bestdx := hotspotSize
-		bestdy := hotspotSize
+		bestdx := math.MaxFloat64
+		bestdy := math.MaxFloat64
 		bestssd := hotspotSize * hotspotSize
+
 		// seek match
-		const seekSize = hotspotSize * 3
+		const subpx = 5
+		const seekSize = hotspotSize * subpx * 2
 		for dyi := 0; dyi < seekSize; dyi++ {
-			dy := dyi - (seekSize / 2)
-			//for dy := hotspotSize / -2; dy < hotspotSize/2; dy++ {
+			dy := float64(dyi-(seekSize/2)) / float64(subpx)
 			for dxi := 0; dxi < seekSize; dxi++ {
-				dx := dxi - (seekSize / 2)
-				//for dx := hotspotSize / -2; dx < hotspotSize/2; dx++ {
+				dx := float64(dxi-(seekSize/2)) / float64(subpx)
 				ssd := 0
 				// compare spot, offset by (dx,dy)
 				for iy := 0; iy < hotspotSize; iy++ {
-					y := my + dy + iy
+					y := dy + float64(my+iy+s.orect.Min.Y)
 					for ix := 0; ix < hotspotSize; ix++ {
-						x := mx + dx + ix
-						sx, sy := s.origToScanned.Transform(float64(x), float64(y))
+						x := dx + float64(mx+ix+s.orect.Min.X)
+						sx, sy := s.origToScanned.Transform(x, y)
 						syv := YBiCatrom(it, sx, sy)
 						var stv uint8
 						if syv > s.scanThresh {
@@ -725,16 +859,16 @@ func (s *Scanner) refineTransform(it *image.YCbCr) error {
 			}
 		}
 		if bestdx != 0 || bestdy != 0 {
-			s.debug("refine transform %d,%d -> %d,%d (%d, %d)\n", spot.x, spot.y, spot.x+bestdx, spot.y+bestdy, bestdx, bestdy)
+			s.debug("refine transform %d,%d -> %f,%f (%f, %f)\n", spot.x, spot.y, float64(spot.x)+bestdx, float64(spot.y)+bestdy, bestdx, bestdy)
 		} else {
 			s.debug("refine transform no change\n")
 		}
 		if debugi != nil {
 			for iy := 0; iy < hotspotSize; iy++ {
-				y := my + bestdy + iy
+				y := bestdy + float64(my+iy+s.orect.Min.Y)
 				for ix := 0; ix < hotspotSize; ix++ {
-					x := mx + bestdx + ix
-					sx, sy := s.origToScanned.Transform(float64(x), float64(y))
+					x := bestdx + float64(mx+ix+s.orect.Min.X)
+					sx, sy := s.origToScanned.Transform(x, y)
 					syv := YBiCatrom(it, sx, sy)
 					debugi.Set(ix+(hotspotSize*3), iy+(hotspotSize*spoti), color.Gray{syv})
 					//sc := ImageBiCatrom(it, sx, sy)
@@ -743,11 +877,27 @@ func (s *Scanner) refineTransform(it *image.YCbCr) error {
 			}
 		}
 		sources[spoti].SetInt(spot.x, spot.y)
-		dests[spoti].X, dests[spoti].Y = s.origToScanned.Transform(float64(spot.x+bestdx), float64(spot.y+bestdy))
-		// TODO: subpixel refinement
+		dests[spoti].X, dests[spoti].Y = s.origToScanned.Transform(float64(spot.x)+bestdx, float64(spot.y)+bestdy)
+		ssds[spoti] = bestssd
 	}
+	minssd := ssds[0]
+	maxssd := ssds[0]
+	sumssd := ssds[0]
+	for _, xs := range ssds[1:] {
+		if xs < minssd {
+			minssd = xs
+		}
+		if xs > maxssd {
+			maxssd = xs
+		}
+		sumssd += xs
+	}
+	meanssd := float64(sumssd) / float64(len(ssds))
 	fmat := FindTransform(sources, dests)
-	s.debug("transform %v\n", fmat)
+	htr := MatrixTransform{fmat}
+	terr := TransformError(sources, dests, &htr)
+	score = terr * meanssd
+	s.debug("score %f, err %f, minssd %d, maxssd %d, meanssd %f, transform %v\n", score, terr, minssd, maxssd, meanssd, fmat)
 	s.origToScanned = &MatrixTransform{fmat}
 	if s.TargetsPngPath != "" {
 		imout, err := os.Create(s.TargetsPngPath)
@@ -756,7 +906,7 @@ func (s *Scanner) refineTransform(it *image.YCbCr) error {
 		err = png.Encode(imout, debugi)
 		maybeFail(err, "%s: %s\n", s.TargetsPngPath, err)
 	}
-	return nil
+	return
 }
 
 func (s *Scanner) translateWholeScanToOrig(it *image.YCbCr) (dboi image.Image, err error) {
@@ -793,10 +943,17 @@ func (s *Scanner) translateWholeScanToOrig(it *image.YCbCr) (dboi image.Image, e
 	return oi, nil
 }
 
+func (s *Scanner) FindTopLineTransform(it *image.YCbCr) error {
+	s.hist = yHistogram(it)
+	s.scanThresh = otsuThreshold(s.hist)
+	return s.topLineYCbCr(it)
+}
+
 // return map[contest @id]map[csel @id](bool marked)
-func (s *Scanner) processYCbCr(it *image.YCbCr) (marked map[string]map[string]bool, err error) {
+func (s *Scanner) processYCbCr(it *image.YCbCr) (marked map[string]map[string]bool, score float64, err error) {
 	if it.Rect.Min.X != 0 || it.Rect.Min.Y != 0 {
-		return nil, fmt.Errorf("image origin not 0,0 but %d,%d", it.Rect.Min.X, it.Rect.Min.Y)
+		err = fmt.Errorf("image origin not 0,0 but %d,%d", it.Rect.Min.X, it.Rect.Min.Y)
+		return
 	}
 	s.debug("it YStride %d CStride %d SubsampleRatio %v Rect %v\n", it.YStride, it.CStride, it.SubsampleRatio, it.Rect)
 	// pxy(it, 0, 0)
@@ -832,30 +989,36 @@ func (s *Scanner) processYCbCr(it *image.YCbCr) (marked map[string]map[string]bo
 
 	err = s.topLineYCbCr(it)
 	if err != nil {
-		return nil, err
+		return
 	}
-	s.refineTransform(it)
+	score, err = s.refineTransform(it)
+	if err != nil {
+		return
+	}
 	if s.DebugPngPath != "" {
-		dbimg, err := s.translateWholeScanToOrig(it)
+		var dbimg image.Image
+		dbimg, err = s.translateWholeScanToOrig(it)
 		if err != nil {
-			return nil, err
+			return
 		}
-		dbfout, err := os.Create(s.DebugPngPath)
+		var dbfout io.WriteCloser
+		dbfout, err = os.Create(s.DebugPngPath)
 		if err != nil {
-			return nil, err
+			return
 		}
 		err = png.Encode(dbfout, dbimg)
 		if err != nil {
-			return nil, err
+			return
 		}
 	}
 	if s.BubblesPngPath != "" {
 		err = s.debugScannedBubbles(it)
 		if err != nil {
-			return nil, err
+			return
 		}
 	}
-	return s.measureScannedBubbles(it), nil
+	marked = s.measureScannedBubbles(it)
+	return
 }
 
 func (s *Scanner) measureBubble(it *image.YCbCr, xywh []float64) (darkCount, pxCount int) {
@@ -1119,18 +1282,38 @@ func (bj BubblesJson) Header(ballotStyleIndex, page int) (left, top, right, bott
 	return
 }
 
+// imSubImage is implemented by most stdlib implementations of image.Image
 type imSubImage interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func ExtractHeaders(bubblesJsonStr []byte, pngbytes [][]byte) (headers []image.Image, err error) {
+func ExtractHeaders(bubblesJsonStr []byte, pngbytes [][]byte) (headers []*Header, err error) {
 	var bubbles BubblesJson
 	err = json.Unmarshal(bubblesJsonStr, &bubbles)
 	if err != nil {
 		err = fmt.Errorf("bad bubble json, %v", err)
 		return
 	}
-	headers = make([]image.Image, 0, len(pngbytes))
+
+	// check that all headers are at the same page position
+	var baselineHLTRB []float64 = nil
+	for ballotStyleIndex, bsh := range bubbles.Headers {
+		for pagestr, headerLeftTopRightBot := range bsh {
+			if baselineHLTRB == nil {
+				baselineHLTRB = headerLeftTopRightBot
+			} else {
+				for i, v := range baselineHLTRB {
+					if v != headerLeftTopRightBot[i] {
+						err = fmt.Errorf("bubbles.headers[%d][%v] baselineHLTRB %#v != %#v", ballotStyleIndex, pagestr, baselineHLTRB, headerLeftTopRightBot)
+						return
+					}
+				}
+			}
+		}
+	}
+
+	// extract headers
+	headers = make([]*Header, 0, len(pngbytes))
 	widthPt := bubbles.DrawSettings.PageSize[0]
 	heightPt := bubbles.DrawSettings.PageSize[1]
 	for ballotStyleIndex, bsh := range bubbles.Headers {
@@ -1176,7 +1359,13 @@ func ExtractHeaders(bubblesJsonStr []byte, pngbytes [][]byte) (headers []image.I
 			orect.Max.Y = ib.Max.Y - int((headerLeftTopRightBot[3]*yscale)+float64(ib.Min.Y))
 			oi := osi.SubImage(orect)
 			log.Printf("headers[%d] bsi %d bp %d format %s, %s orect %s oi %s", len(headers), ballotStyleIndex, bp, format, ib, orect, oi.Bounds())
-			headers = append(headers, oi)
+			var spngb bytes.Buffer
+			png.Encode(&spngb, oi)
+			nh := new(Header)
+			nh.SetOrigImage(spngb.Bytes())
+			nh.orect = orect
+			nh.drawLeftTopRightBot = headerLeftTopRightBot
+			headers = append(headers, nh)
 		}
 	}
 	return

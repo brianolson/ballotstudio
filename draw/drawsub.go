@@ -16,6 +16,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type DrawBothOb struct {
@@ -53,7 +54,7 @@ func (ds *DrawServer) Start() error {
 	ds.cmd = exec.Command(ds.FlaskPath, "run", "-p", port)
 	ds.cmd.Env = os.Environ()
 	ds.cmd.Env = append(ds.cmd.Env, "FLASK_ENV=development")
-	ds.cmd.Env = append(ds.cmd.Env, "FLASK_APP=draw/app.py")
+	ds.cmd.Env = append(ds.cmd.Env, "FLASK_APP=ballotstudio.app")
 	ds.cmd.Stdout = os.Stdout
 	ds.cmd.Stderr = os.Stderr
 	err := ds.cmd.Start()
@@ -61,6 +62,73 @@ func (ds *DrawServer) Start() error {
 		ds.cmd = nil
 	}
 	return err
+}
+
+type ServerStartTimeout struct {
+	inner error
+}
+
+func (sst *ServerStartTimeout) Error() string {
+	if sst.inner == nil {
+		return "DrawServer not ready after timeout"
+	}
+	return fmt.Sprintf("DrawServer not ready after timeout, %v", sst.inner)
+}
+
+func (sst *ServerStartTimeout) Unwrap() error {
+	return sst.inner
+}
+
+// StartWait waits up to {timeout} for the server to be started and available.
+// May return nil or ServerStartTimeout
+func (ds *DrawServer) StartWait(timeout time.Duration) error {
+	start := time.Now()
+	expiry := start.Add(timeout)
+	dt := timeout / 10
+	if dt < time.Millisecond {
+		dt = time.Millisecond
+	}
+	baseurl, err := url.Parse(ds.BackendUrl())
+	if err != nil {
+		return err
+	}
+	newpath := path.Join(baseurl.Path, "/demo.js")
+	nurl := baseurl
+	nurl.Path = newpath
+	demoJsUrl := nurl.String()
+	tryget := func(now time.Time) error {
+		remaining := expiry.Sub(now)
+		hclient := http.Client{Timeout: remaining}
+		resp, err := hclient.Get(demoJsUrl)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != 200 {
+			body, _ := ioutil.ReadAll(resp.Body)
+			if len(body) > 50 {
+				body = body[:50]
+			}
+			return fmt.Errorf("draw POST %d %#v", resp.StatusCode, string(body))
+		}
+		// TODO: read the demo.js body an check that it is >1 byte and <100000
+		return nil
+	}
+	now := start
+	for true {
+		err = tryget(now)
+		if err == nil {
+			return nil
+		}
+		if time.Now().Add(dt).After(expiry) {
+			return &ServerStartTimeout{err}
+		}
+		time.Sleep(dt)
+		now = time.Now()
+		if now.Add(dt).After(expiry) {
+			return &ServerStartTimeout{err}
+		}
+	}
+	return nil
 }
 
 func (ds *DrawServer) Stop() error {
@@ -242,6 +310,11 @@ func EnsureBackend(drawBackend, flaskPath string) (backendUrl string, cf func(),
 	drawserver.FlaskPath = flaskPath
 	err = drawserver.Start()
 	if err != nil {
+		return "", nop, err
+	}
+	err = drawserver.StartWait(time.Second)
+	if err != nil {
+		drawserver.Stop()
 		return "", nop, err
 	}
 	cf = func() {

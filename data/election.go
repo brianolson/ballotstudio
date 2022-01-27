@@ -1,6 +1,7 @@
 package data
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -212,7 +213,8 @@ func (ifc *idFixupContext) newId(rec recNeedsNewId) (newatid string) {
 	return newatid
 }
 
-//go:generate go run ../misc/texttosource/main.go data type_seq.json
+//go:embed type_seq.json
+var type_seq_json string
 
 var tsmap map[string]string
 

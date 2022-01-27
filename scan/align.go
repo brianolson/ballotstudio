@@ -48,6 +48,7 @@ func (fp *FPoint) SetInt(x, y int) {
 	fp.Y = float64(y)
 }
 
+// FindTransform solves for best-fit affine transform which maps source positions to dest positions.
 func FindTransform(sources, dests []FPoint) []float64 {
 	if len(sources) != len(dests) {
 		return nil
@@ -76,6 +77,20 @@ func FindTransform(sources, dests []FPoint) []float64 {
 	b := mat.NewDense(len(sources)*3, 1, dest)
 	var x mat.Dense
 	x.Solve(A, b)
-	//fmt.Printf("solution ?\nx = %v\n", mat.Formatted(&x))
+	// fmt.Printf("solution ?\nx = %v\n", mat.Formatted(&x))
 	return mat.Col(nil, 0, &x)
+}
+
+// TransformError returns the sum of squared differences of dests vs sources transformed to dests
+func TransformError(sources, dests []FPoint, t AffineTransform) float64 {
+	// TODO: also return drop-an-outlier version?
+	ssd := float64(0)
+	for i, sp := range sources {
+		dp := dests[i]
+		ox, oy := t.Transform(sp.X, sp.Y)
+		dx := ox - dp.X
+		dy := oy - dp.Y
+		ssd += (dx * dx) + (dy * dy)
+	}
+	return ssd
 }

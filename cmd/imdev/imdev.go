@@ -1,13 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
+	"io/ioutil"
 	"log"
+	"math"
+	"math/rand"
 	"os"
+
+	xidraw "golang.org/x/image/draw"
+	ximath "golang.org/x/image/math/f64"
 
 	"github.com/brianolson/ballotstudio/draw"
 	"github.com/brianolson/ballotstudio/scan"
@@ -40,6 +51,9 @@ type devcx struct {
 	pdfPath     string
 	bubblesPath string
 	pngPageRoot string
+	hmdebug     bool
+	hmpage      int
+	hmhead      int
 
 	erJsonBlob     []byte
 	pdf            []byte
@@ -48,6 +62,11 @@ type devcx struct {
 
 	backendCf  func()
 	hasBackend bool
+
+	headers  []*scan.Header
+	scanners []scan.Scanner
+
+	testPageJpg [][]byte
 }
 
 func (dc *devcx) getEr() error {
@@ -260,6 +279,36 @@ func (dc *devcx) writePng() error {
 	return nil
 }
 
+func (dc *devcx) getScanners() error {
+	err := dc.getPng()
+	if err != nil {
+		return err
+	}
+	err = dc.readBubbles()
+	if err != nil {
+		return err
+	}
+	var bubbles scan.BubblesJson
+	err = json.Unmarshal(dc.bubblesJsonStr, &bubbles)
+	if len(dc.scanners) < len(dc.pngbytes) {
+		dc.scanners = make([]scan.Scanner, len(dc.pngbytes))
+	}
+	for pngi, blob := range dc.pngbytes {
+		var orig image.Image
+		orig, _, err = image.Decode(bytes.NewReader(blob))
+		if err != nil {
+			return err
+		}
+		dc.scanners[pngi].Bj = bubbles
+		err = dc.scanners[pngi].SetOrigImage(orig)
+		if err != nil {
+			return err
+		}
+		dc.scanners[pngi].DebugOut = os.Stderr
+	}
+	return nil
+}
+
 func (dc *devcx) getPngHeaders() error {
 	err := dc.getPdf()
 	if err != nil {
@@ -274,14 +323,20 @@ func (dc *devcx) getPngHeaders() error {
 	if err != nil {
 		return err
 	}
+	dc.headers = headers
 	log.Printf("%d headers\n", len(headers))
 	for pngi, phim := range headers {
 		path := fmt.Sprintf("%s%d_header.png", dc.pngPageRoot, pngi)
+		fi, err := os.Stat(path)
+		if err == nil && fi.Size() > 0 {
+			log.Printf("   %s exists\n", path)
+			continue
+		}
 		fout, err := os.Create(path)
 		if err != nil {
 			return fmt.Errorf("%s: %v", path, err)
 		}
-		err = png.Encode(fout, phim)
+		_, err = fout.Write(phim.Png())
 		if err != nil {
 			return fmt.Errorf("%s: %v", path, err)
 		}
@@ -290,6 +345,237 @@ func (dc *devcx) getPngHeaders() error {
 			return fmt.Errorf("%s: %v", path, err)
 		}
 		log.Printf("-> %s\n", path)
+	}
+	for pngi, phim := range headers {
+		path := fmt.Sprintf("%s%d_hsd.png", dc.pngPageRoot, pngi)
+		log.Printf("%s %s\n", path, phim.HotspotDebugString())
+		fi, err := os.Stat(path)
+		if err == nil && fi.Size() > 0 {
+			log.Printf("   %s exists\n", path)
+			continue
+		}
+		fout, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		hsdi := phim.HotspotDebugImage()
+		err = png.Encode(fout, hsdi)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		err = fout.Close()
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		log.Printf("-> %s\n", path)
+	}
+	return err
+}
+
+// +/- this many degrees
+const testPageDegreeErrorDegrees = 10
+
+// Apply a small random affine transform (rotate+scale) to a png page
+func testPage(pngbytes []byte) (outim image.Image, spec TestPage, err error) {
+	th := (rand.Float64() - 0.5) * (math.Pi * ((testPageDegreeErrorDegrees * 2) / 180.0))
+	// +/- 20%
+	scale := 1 + ((rand.Float64() - 0.5) * 0.4)
+	spec.Rotation = th
+	spec.Scale = scale
+	log.Printf("th %f scale %f\n", th, scale)
+	var orig image.Image
+	orig, _, err = image.Decode(bytes.NewReader(pngbytes))
+	if err != nil {
+		return
+	}
+	orect := orig.Bounds()
+	dy := float64(0)
+	extraHeight := float64(0)
+	dx := float64(0)
+	extraWidth := float64(0)
+	if th < 0 {
+		// translate to allow for rotation above old top
+		dy = math.Sin(th) * float64(orect.Max.X) * -1
+		extraHeight = dy - ((1 - math.Cos(th)) * float64(orect.Max.Y))
+		extraWidth = -math.Sin(th) * float64(orect.Max.Y)
+	} else {
+		dx = math.Sin(th) * float64(orect.Max.Y)
+		extraWidth = dx - ((1 - math.Cos(th)) * float64(orect.Max.X))
+		extraHeight = math.Sin(th) * float64(orect.Max.X)
+	}
+	tr := [6]float64{
+		math.Cos(th) * scale, -math.Sin(th) * scale, dx,
+		math.Sin(th) * scale, math.Cos(th) * scale, dy,
+	}
+	traff3 := ximath.Aff3(tr)
+	log.Print(traff3)
+	db := orig.Bounds()
+	db.Max.X = int(scale * (float64(db.Max.X) + extraWidth))
+	db.Max.Y = int(scale * (float64(db.Max.Y) + extraHeight))
+	rgbim := image.NewNRGBA(db)
+	whiteClear := color.NRGBA{255, 255, 255, 255}
+	for y := db.Min.Y; y < db.Max.Y; y++ {
+		for x := db.Min.X; x < db.Max.X; x++ {
+			rgbim.SetNRGBA(x, y, whiteClear)
+		}
+	}
+	xidraw.BiLinear.Transform(rgbim, traff3, orig, orig.Bounds(), xidraw.Src, nil)
+	outim = rgbim
+	return
+}
+
+var jpeg90 = jpeg.Options{Quality: 90}
+
+type TestPagesSpec struct {
+	Pages []TestPage `json:"pages"`
+}
+type TestPage struct {
+	Rotation float64 `json:"rotation"`
+	Scale    float64 `json:"scale"`
+}
+
+func (dc *devcx) doTestPages() (err error) {
+	if len(dc.testPageJpg) != 0 {
+		return nil
+	}
+	err = dc.getPng()
+	if err != nil {
+		return err
+	}
+	var tps TestPagesSpec
+	dc.testPageJpg = make([][]byte, 0, len(dc.pngbytes))
+	for pngi, blob := range dc.pngbytes {
+		path := fmt.Sprintf("%s%d_tp.jpg", dc.pngPageRoot, pngi)
+		fi, err := os.Stat(path)
+		if err == nil && fi.Size() > 0 {
+			log.Printf("   %s ->\n", path)
+			jpegBytes, err := ioutil.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("%s: %v", path, err)
+			}
+			dc.testPageJpg = append(dc.testPageJpg, jpegBytes)
+			continue
+		}
+		tp, spec, err := testPage(blob)
+		if err != nil {
+			return fmt.Errorf("%s: test page err, %v", path, err)
+		}
+		fout, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		var buf bytes.Buffer
+		err = jpeg.Encode(&buf, tp, &jpeg90)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		jpegBytes := buf.Bytes()
+		_, err = fout.Write(jpegBytes)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		err = fout.Close()
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		log.Printf("-> %s\n", path)
+		tps.Pages = append(tps.Pages, spec)
+		dc.testPageJpg = append(dc.testPageJpg, jpegBytes)
+	}
+	if len(tps.Pages) == len(dc.pngbytes) {
+		path := fmt.Sprintf("%stestpages.json", dc.pngPageRoot)
+		fout, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		enc := json.NewEncoder(fout)
+		err = enc.Encode(tps)
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		err = fout.Close()
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+	}
+	return nil
+}
+
+func (dc *devcx) testHeaderMatch() error {
+	err := dc.getPdf()
+	if err != nil {
+		return err
+	}
+	err = dc.getScanners()
+	if err != nil {
+		return err
+	}
+	err = dc.doTestPages()
+	if err != nil {
+		return err
+	}
+	err = dc.getPngHeaders()
+	if err != nil {
+		return err
+	}
+	var bubbles scan.BubblesJson
+	err = json.Unmarshal(dc.bubblesJsonStr, &bubbles)
+	if err != nil {
+		return fmt.Errorf("bad bubble json, %v", err)
+	}
+	for jpgi, jpgbytes := range dc.testPageJpg {
+		if dc.hmpage != -1 && dc.hmpage != jpgi {
+			continue
+		}
+		path := fmt.Sprintf("%s%d_tp.jpg", dc.pngPageRoot, jpgi)
+		im, format, err := image.Decode(bytes.NewReader(jpgbytes))
+		if err != nil {
+			return fmt.Errorf("%s: %v", path, err)
+		}
+		ycc, ok := im.(*image.YCbCr)
+		if !ok {
+			return fmt.Errorf("%s: %s not YCbCr", path, format)
+		}
+		headerScores := make([]float64, len(dc.headers))
+		bestHScore := math.MaxFloat64
+		bestH := -1
+		for hi, h := range dc.headers {
+			if dc.hmhead != -1 && dc.hmhead != hi {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d\n", jpgi, hi)
+			score, err := h.CheckPage(&dc.scanners[hi], ycc, dc.hmdebug)
+			if err != nil {
+				return err
+			}
+			headerScores[hi] = score
+			if score < bestHScore {
+				bestHScore = score
+				bestH = hi
+			}
+			log.Printf("page[%2d] header[%2d] score=%f\n", jpgi, hi, score)
+			debugi := h.DebugImage()
+			if debugi != nil {
+				dbp := fmt.Sprintf("%s%d_%d_tp_db.png", dc.pngPageRoot, jpgi, hi)
+				dbfout, err := os.Create(dbp)
+				if err != nil {
+					return fmt.Errorf("%s: %v", dbp, err)
+				}
+				png.Encode(dbfout, debugi)
+				dbfout.Close()
+			}
+		}
+		for hi, hscore := range headerScores {
+			if (hi != bestH) && (hscore > (bestHScore * 5)) {
+				continue
+			}
+			_, score, err := dc.scanners[hi].ProcessScannedImage(im)
+			fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d hscore %f pscore %f\n", jpgi, hi, hscore, score)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d: ERROR %v\n", jpgi, hi, err)
+
+			}
+		}
 	}
 	return err
 }
@@ -308,9 +594,12 @@ func main() {
 	flag.StringVar(&dc.pdfPath, "pdf", "", "path to rendered election pdf")
 	flag.StringVar(&dc.bubblesPath, "bubbles", "", "path to bubbles json from pdf rendering of election")
 	flag.StringVar(&dc.pngPageRoot, "png-root", "", "path to png pages {root}{%d}.png")
+	flag.BoolVar(&dc.hmdebug, "hmdebug", false, "debug header-match")
+	flag.IntVar(&dc.hmpage, "hmpage", -1, "header-match page to debug (default all)")
+	flag.IntVar(&dc.hmhead, "hmhead", -1, "header-match header to debug (default all")
 	flag.Parse()
 
 	defer dc.Close()
 
-	fmt.Println(dc.getPngHeaders())
+	fmt.Println(dc.testHeaderMatch())
 }

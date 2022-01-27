@@ -52,8 +52,8 @@ func (sh *StudioHandler) handleElectionScanPOST(w http.ResponseWriter, r *http.R
 	var s scan.Scanner
 	s.Bj = bubbles
 	s.SetOrigImage(orig)
-	marked, err := s.ProcessScannedImage(im)
-	if maybeerr(w, err, 500, "process err: %v", err) {
+	marked, pscore, err := s.ProcessScannedImage(im)
+	if maybeerr(w, err, 500, "process err: %f %v", pscore, err) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

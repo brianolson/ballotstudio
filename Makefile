@@ -1,11 +1,16 @@
+ALLSRC=$(shell find . -name \*.go)
 
-ballotstudio:	static/demoelection.json .PHONY data/type_seq_json.go
+ballotstudio:	${ALLSRC} static/demoelection.json
 	go build ./cmd/ballotstudio
 
-data/type_seq_json.go:	data/type_seq.json misc/texttosource/main.go
-	cd data && go generate
+imdev:	${ALLSRC}
+	go build ./cmd/imdev
+
+er:	${ALLSRC}
+	go build ./cmd/er
+
+all:	ballotstudio imdev er
+	go vet ./...
 
 static/demoelection.json:	python/ballotstudio/demorace.py
 	python3 python/ballotstudio/demorace.py > static/demoelection.json
-
-.PHONY:

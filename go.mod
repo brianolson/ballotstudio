@@ -8,5 +8,6 @@ require (
 	github.com/lib/pq v1.7.0
 	github.com/mattn/go-sqlite3 v1.14.0
 	go.etcd.io/bbolt v1.3.5
+	golang.org/x/image v0.0.0-20211028202545-6944b10bf410
 	gonum.org/v1/gonum v0.7.0
 )

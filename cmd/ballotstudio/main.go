@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"image/png"
 	"io"
 	"io/ioutil"
 	"log"
@@ -242,7 +241,7 @@ func (sh *StudioHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(200)
-		png.Encode(w, headers[pagenum])
+		w.Write(headers[pagenum].Png())
 		return
 	}
 	// `^/election/(\d+)/scan$`
