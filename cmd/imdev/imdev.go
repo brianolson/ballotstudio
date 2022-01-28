@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"time"
 
 	xidraw "golang.org/x/image/draw"
 	ximath "golang.org/x/image/math/f64"
@@ -304,7 +305,6 @@ func (dc *devcx) getScanners() error {
 		if err != nil {
 			return err
 		}
-		dc.scanners[pngi].DebugOut = os.Stderr
 	}
 	return nil
 }
@@ -527,6 +527,7 @@ func (dc *devcx) testHeaderMatch() error {
 		if dc.hmpage != -1 && dc.hmpage != jpgi {
 			continue
 		}
+		jpstart := time.Now()
 		path := fmt.Sprintf("%s%d_tp.jpg", dc.pngPageRoot, jpgi)
 		im, format, err := image.Decode(bytes.NewReader(jpgbytes))
 		if err != nil {
@@ -537,6 +538,7 @@ func (dc *devcx) testHeaderMatch() error {
 			return fmt.Errorf("%s: %s not YCbCr", path, format)
 		}
 		headerScores := make([]float64, len(dc.headers))
+		scanners := make([]*scan.ScanContext, len(dc.headers))
 		bestHScore := math.MaxFloat64
 		bestH := -1
 		for hi, h := range dc.headers {
@@ -544,7 +546,14 @@ func (dc *devcx) testHeaderMatch() error {
 				continue
 			}
 			fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d\n", jpgi, hi)
-			score, err := h.CheckPage(&dc.scanners[hi], ycc, dc.hmdebug)
+			hstart := time.Now()
+			sc := dc.scanners[hi].NewScanContext()
+			scanners[hi] = sc
+			var debugi scan.SettableImage
+			if dc.hmdebug {
+				debugi = h.DebugImage()
+			}
+			score, err := h.CheckPage(sc, ycc, debugi)
 			if err != nil {
 				return err
 			}
@@ -553,8 +562,8 @@ func (dc *devcx) testHeaderMatch() error {
 				bestHScore = score
 				bestH = hi
 			}
-			log.Printf("page[%2d] header[%2d] score=%f\n", jpgi, hi, score)
-			debugi := h.DebugImage()
+			dt := time.Now().Sub(hstart)
+			fmt.Fprintf(os.Stderr, "hm page[%2d] header[%2d] hscore=%f (%s)\n", jpgi, hi, score, dt.String())
 			if debugi != nil {
 				dbp := fmt.Sprintf("%s%d_%d_tp_db.png", dc.pngPageRoot, jpgi, hi)
 				dbfout, err := os.Create(dbp)
@@ -569,13 +578,17 @@ func (dc *devcx) testHeaderMatch() error {
 			if (hi != bestH) && (hscore > (bestHScore * 5)) {
 				continue
 			}
-			_, score, err := dc.scanners[hi].ProcessScannedImage(im)
-			fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d hscore %f pscore %f\n", jpgi, hi, hscore, score)
+			pstart := time.Now()
+			_, score, err := scanners[hi].ProcessScannedImage(im)
+			dt := time.Now().Sub(pstart)
+			fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d hscore %f pscore %f (%s)\n", jpgi, hi, hscore, score, dt.String())
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "hm testpage=%d orig=%d: ERROR %v\n", jpgi, hi, err)
 
 			}
 		}
+		jpt := time.Now().Sub(jpstart)
+		fmt.Fprintf(os.Stderr, "hm testpage=%d tpdone %s\n", jpgi, jpt.String())
 	}
 	return err
 }
@@ -600,6 +613,8 @@ func main() {
 	flag.Parse()
 
 	defer dc.Close()
+
+	scan.DebugOut = os.Stderr
 
 	fmt.Println(dc.testHeaderMatch())
 }

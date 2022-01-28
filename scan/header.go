@@ -30,8 +30,6 @@ type Header struct {
 	// hotspots are coords within orig.Bounds() ((0,0)-(w,h))
 	hotspots     []point
 	hotspotSnaps [][hotspotSize * hotspotSize]uint8
-
-	debugi *image.NRGBA
 }
 
 func (h *Header) Png() []byte {
@@ -126,35 +124,35 @@ func (h *Header) HotspotDebugImage() *image.RGBA {
 	return out
 }
 
-func (h *Header) DebugImage() image.Image {
-	if h.debugi != nil {
-		return h.debugi
-	}
-	return nil
+// SettableImage is image.Image + Set()
+type SettableImage interface {
+	image.Image
+	Set(x, y int, c color.Color)
 }
 
-// like 'refineTransform' mapping header hotspots to matches in image,
-// keep page with smallest error
-func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float64, err error) {
-	err = s.FindTopLineTransform(it)
-	if err != nil {
-		return
-	}
+func (h *Header) DebugImage() SettableImage {
 	// debugi top to bottom
 	// [0]: orig header from png
 	// [1]: from top line transform
 	// [2]: from transform refined here
 	// [4]: hotspots
-	if debug {
-		h.debugi = image.NewNRGBA(image.Rectangle{
-			Min: image.Point{0, 0},
-			Max: image.Point{h.orect.Dx(), h.orect.Dy()*4 + 3}})
+	return image.NewNRGBA(image.Rectangle{
+		Min: image.Point{0, 0},
+		Max: image.Point{h.orect.Dx(), h.orect.Dy()*4 + 3}})
+}
+
+// like 'refineTransform' mapping header hotspots to matches in image,
+// keep page with smallest error
+func (h *Header) CheckPage(s *ScanContext, it *image.YCbCr, debugi SettableImage) (score float64, err error) {
+	err = s.FindTopLineTransform(it)
+	if err != nil {
+		return
 	}
 	dgy := 0
 
-	if h.debugi != nil {
+	if debugi != nil {
 		// png copy of header
-		draw.Draw(h.debugi, h.orig.Bounds(), h.orig, h.orig.Bounds().Min, draw.Src)
+		draw.Draw(debugi, h.orig.Bounds(), h.orig, h.orig.Bounds().Min, draw.Src)
 		dgy++
 
 		// header from top-line alignment
@@ -164,7 +162,7 @@ func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float
 				dx := hx - h.orect.Min.X
 				sx, sy := s.origToScanned.Transform(float64(hx), float64(hy))
 				syv := YBiCatrom(it, sx, sy)
-				h.debugi.Set(dx, dy, color.Gray{syv})
+				debugi.Set(dx, dy, color.Gray{syv})
 			}
 		}
 		dgy++
@@ -214,7 +212,7 @@ func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float
 				}
 			}
 		}
-		if debug {
+		if debugi != nil {
 			if bestdx != 0 || bestdy != 0 {
 				s.debug("refine transform %d,%d -> %f,%f (%f, %f)\n", spot.x, spot.y, float64(spot.x)+bestdx, float64(spot.y)+bestdy, bestdx, bestdy)
 			} else {
@@ -240,7 +238,7 @@ func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float
 	meanssd := float64(sumssd) / float64(len(ssds))
 	fmat := FindTransform(sources, dests)
 	htr := MatrixTransform{fmat}
-	if h.debugi != nil {
+	if debugi != nil {
 		// header from refined alignment
 		for hy := h.orect.Min.Y; hy < h.orect.Max.Y; hy++ {
 			dy := ((h.orect.Dy() + 1) * dgy) + (hy - h.orect.Min.Y)
@@ -248,7 +246,7 @@ func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float
 				dx := hx - h.orect.Min.X
 				sx, sy := htr.Transform(float64(hx), float64(hy))
 				syv := YBiCatrom(it, sx, sy)
-				h.debugi.Set(dx, dy, color.Gray{syv})
+				debugi.Set(dx, dy, color.Gray{syv})
 			}
 		}
 		dgy++
@@ -263,9 +261,9 @@ func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float
 					ox := (gx * (hotspotSize + 1)) + ix
 					c := spt[(hotspotSize*iy)+ix]
 					if c > 0 {
-						h.debugi.Set(ox, oy, color.Gray{255})
+						debugi.Set(ox, oy, color.Gray{255})
 					} else {
-						h.debugi.Set(ox, oy, color.Gray{0})
+						debugi.Set(ox, oy, color.Gray{0})
 					}
 				}
 			}
@@ -280,7 +278,7 @@ func (h *Header) CheckPage(s *Scanner, it *image.YCbCr, debug bool) (score float
 				for ix := 0; ix < hotspotSize; ix++ {
 					ox := (gx * (hotspotSize + 1)) + ix
 					syv := YBiCatrom(it, spt.X, spt.Y)
-					h.debugi.Set(ox, oy, color.Gray{syv})
+					debugi.Set(ox, oy, color.Gray{syv})
 				}
 			}
 		}
