@@ -17,6 +17,7 @@ memcache = None
 from . import cache
 from . import demorace
 from . import randrace
+from . import randvote
 from . import draw
 ElectionPrinter = draw.ElectionPrinter
 
@@ -144,6 +145,14 @@ def pdfToPng(pdfbytes):
     return result.stdout # png bytes
 
 
+def requestbool(name):
+    v = request.args.get(name)
+    if not v:
+        return False
+    if v in {'0', 'f', 'F', 'false', 'False', 'FALSE'}:
+        return False
+    return True
+
 @app.route('/')
 def home():
     return render_template('index.html', electionid="", urls=_election_urls(), prefix=request.environ.get('SCRIPT_NAME','').rstrip('/'))
@@ -198,6 +207,9 @@ def randracepdf():
     elections = er.get('Election', [])
     el = elections[0]
     ep = ElectionPrinter(er, el)
+    if requestbool('marked'):
+        marks = randvote.randVote(er)
+        ep.setMarks(marks)
     pdfbytes = io.BytesIO()
     ep.drawToFile(outfile=pdfbytes)
     pdfbytes = pdfbytes.getvalue()

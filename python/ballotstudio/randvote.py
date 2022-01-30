@@ -22,8 +22,10 @@ def randVote(er):
                 cotype = co['@type']
                 if cotype == 'ElectionResults.BallotMeasureContest':
                     va = 1
-                # TODO: RetentionContest, PartyContest
-            if va > 1:
+                elif cotype == 'ElectionResults.RetentionContest':
+                    va = 1
+                # TODO: PartyContest
+            if va and (va > 1):
                 getn = random.randint(1, va)
             else:
                 getn = 1
