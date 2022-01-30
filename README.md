@@ -57,7 +57,7 @@ Dependencies:
 `ballotstudio` will normally automatically start and stop the draw server.
 It can be run on its own with:
 
-`FLASK_ENV=development FLASK_APP=python/ballotstudio/app.py bsvenv/bin/flask run`
+`FLASK_ENV=development FLASK_APP=ballotstudio.app flask run`
 
 `ballotstudio` can be given the option `-draw-backend http://127.0.0.1:5000/` to point to that at Flask's default port 5000.
 

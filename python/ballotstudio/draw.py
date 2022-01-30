@@ -122,6 +122,14 @@ contestTitleStyle = ParagraphStyle(
     leftIndent=1 + (0.1 * inch),
 )
 
+contestSubtitleStyle = ParagraphStyle(
+    'contestSubtitleStyle',
+    fontName=gs.candsubFontName,
+    fontSize=gs.candsubFontSize,
+    leading=gs.candsubLeading,
+    leftIndent=1 + (0.1 * inch),
+)
+
 instructionStyle = ParagraphStyle('instructionParagraph')
 
 selectionStyle = ParagraphStyle(
@@ -351,7 +359,6 @@ class BallotMeasureContest:
         ('TotalSubUnits', None), #int
         ('Type', None), # ElectionResults.BallotMeasureType {ballot-measure,initiative,recall,referendum,other}
         ('VoteVariation', None), #ElectionResults.VoteVariation
-        ('VotesAllowed', None), #int, probably 1
     )
     def __init__(self, erctx, contest_json_object):
         co = contest_json_object
@@ -535,6 +542,133 @@ class CandidateContest:
         out += 0.1 * inch # bottom padding
         return out
 
+class RetentionContest:
+    "NIST 1500-100 v2 ElectionResults.RetentionContest"
+    _optional_fields = (
+        ('Abbreviation', None), #str
+        ('BallotSubTitle', None), #str
+        ('BallotTitle', None), #str
+        ('ConStatement', None), #str
+        ('ContestSelection', []), #[(PartySelection|BallotMeasureSelection|CandidateSelection), ...]
+        ('CountStatus', []), #ElectionResults.CountStatus
+        ('EffectOfAbstain', None), #str
+        ('ExternalIdentifier', []),
+        ('HasRotation', False), #bool
+        ('InfoUri', []), # []str
+        ('OfficeIds', []), #[ElectionResults.Office, ...]
+        ('OtherCounts', []), #[ElectionResults.OtherCounts, ...]
+        ('OtherType', None), #str .Type=other
+        ('OtherVoteVariation', []), #str
+        ('PassageThreshold', None), #str
+        ('ProStatement', None), #str
+        ('SequenceOrder', None), #int
+        ('SubUnitsReported', None), #int
+        ('SummaryText', None), #str
+        ('TotalSubUnits', None), #int
+        ('Type', None), # ElectionResults.BallotMeasureType {ballot-measure,initiative,recall,referendum,other}
+        ('VoteVariation', None), #ElectionResults.VoteVariation
+    )
+    def __init__(self, erctx, contest_json_object):
+        co = contest_json_object
+        self.co = co
+        self.Name = co['Name']
+        self.CandidateId = co['CandidateId']
+        self.ElectionDistrictId = co['ElectionDistrictId'] # reference to a ReportingUnit gpunit
+        setOptionalFields(self, self.co)
+        self.draw_selections = [erctx.makeDrawOb(x) for x in self.ContestSelection]
+        self._title = self.BallotTitle
+        if not self._title:
+            if self.OfficeIds:
+                offices = [erctx.getRawOb(x) for x in self.OfficeIds]
+                officeNames = filter(None, [x.get('Name') for x in offices])
+                officeName = ', '.join(officeNames)
+                self._title = 'Judge Retention:\n{}'.format(officeName)
+            else:
+                self._title = 'Judge Retention'
+    def draw(self, c, x, y, width, draw_selections=None):
+        # TODO: fix all copy-pasteos from BallotMeasureContest
+        if draw_selections is None:
+            draw_selections = self.draw_selections
+        pos = y - 3 # leave room for 3pt top border
+        # title
+        tpar = Paragraph(self._title, contestTitleStyle)
+        ww, wh = tpar.wrap(width, 100)
+        c.setStrokeColorRGB(*gs.titleBGColor)
+        c.setFillColorRGB(*gs.titleBGColor)
+        c.rect(x, pos - wh, width, wh, fill=1, stroke=0)
+        tpar.drawOn(c, x, pos-wh)
+        pos -= wh
+        # subtitle, should be "Vote yes or no"
+        c.setStrokeColorCMYK(.1,0,0,0)
+        c.setFillColorCMYK(.1,0,0,0)
+        c.rect(x, pos - gs.subtitleLeading, width, gs.subtitleLeading, fill=1, stroke=0)
+        c.setFillColorRGB(0,0,0)
+        c.setStrokeColorRGB(0,0,0)
+        # TODO: skip BallotSubTitle if null/empty
+        txto = c.beginText(x + 1 + (0.1 * inch), pos - gs.subtitleFontSize)
+        txto.setFont(gs.subtitleFontName, gs.subtitleFontSize)
+        txto.textLines(self.BallotSubTitle or '')
+        c.drawText(txto)
+        pos -= gs.subtitleLeading
+        c.setFillColorRGB(0,0,0)
+        c.setStrokeColorRGB(0,0,0)
+
+        # SummaryText: e.g. 'Keep {candidate.ame} as {office.name} of the {gpu.name}'
+        if self.SummaryText:
+            spar = Paragraph(self.SummaryText, contestSubtitleStyle)
+            ww, wh = spar.wrap(width, 100)
+            c.setStrokeColorRGB(*gs.titleBGColor)
+            c.setFillColorRGB(1,1,1)
+            c.rect(x, pos - wh, width, wh, fill=1, stroke=0)
+            spar.drawOn(c, x, pos-wh)
+            pos -= wh
+
+        pos -= 0.1 * inch # header-choice gap
+        maxheight = self._maxheight(width-1)
+        for ds in draw_selections:
+            dy = ds.height(width)
+            ds.draw(c, x+1, pos, width-1)
+            pos -= maxheight
+        pos -= 0.1 * inch # bottom padding
+
+        # top border
+        c.setStrokeColorRGB(0,0,0)
+        c.setLineWidth(3)
+        c.line(x, y-1.5, x + width, y-1.5) # -0.5 caps left border 1.0pt line
+        # left border and bottom border
+        c.setLineWidth(1)
+        path = c.beginPath()
+        path.moveTo(x+0.5, y-1.5)
+        path.lineTo(x+0.5, pos-0.5)
+        path.lineTo(x+width, pos-0.5)
+        c.drawPath(path, stroke=1)
+        return
+    def _maxheight(self, width, draw_selections=None):
+        draw_selections = draw_selections or self.draw_selections
+        mh = None
+        for ds in draw_selections:
+            if getattr(ds, 'IsWriteIn', False):
+                continue
+            h = ds.height(width)
+            if mh is None or h > mh:
+                mh = h
+        return mh
+    def height(self, width, draw_selections=None):
+        draw_selections = draw_selections or self.draw_selections
+        out = self._maxheight(width-1) * len(draw_selections)
+        out += 4 # top and bottom border
+        tpar = Paragraph(self._title, contestSubtitleStyle)
+        _, wh = tpar.wrap(width, 100)
+        out += wh
+        out += gs.subtitleLeading
+        spar = Paragraph(self.SummaryText, selsubStyle)
+        _, wh = spar.wrap(width, 100)
+        out += wh
+        out += 0.1 * inch # header-choice gap
+        out += 0.1 * inch # bottom padding
+        return out
+
+
 class InstructionsHeader:
     header1 = 'Making selections'
     image1 = 'filled bubble.png'
@@ -661,20 +795,6 @@ class Header:
     def draw(self, c, x, y, width, draw_selections=None):
         if self.impl:
             return self.impl.draw(c,x,y,width,draw_selections)
-
-def rehydrateContest(election, contest_json_object):
-    co = contest_json_object
-    cotype = co['@type']
-    if cotype == 'ElectionResults.CandidateContest':
-        return CandidateContest(election, contest_json_object)
-    elif cotype == 'ElectionResults.BallotMeasureContest':
-        raise Exception('TODO: implement contest type {}'.format(cotype))
-    elif cotype == 'ElectionResults.PartyContest':
-        raise Exception('TODO: implement contest type {}'.format(cotype))
-    elif cotype == 'ElectionResults.RetentionContest':
-        raise Exception('TODO: implement contest type {}'.format(cotype))
-    else:
-        raise Exception('unknown contest type {!r}'.format(cotype))
 
 class OrderedContest:
     def __init__(self, erctx, contest_json_object):
@@ -917,6 +1037,7 @@ class ElectionResultsContext:
         'ElectionResults.CandidateSelection': CandidateSelection,
         'ElectionResults.OrderedContest': OrderedContest,
         'ElectionResults.OrderedHeader': OrderedHeader,
+        'ElectionResults.RetentionContest': RetentionContest,
         'ElectionResults.Header': Header,
         #'ElectionResults.Office': Office,
     }

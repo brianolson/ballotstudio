@@ -132,7 +132,33 @@ makeContestMechanic(
     ballotmeasureContestModf,
 )
 
-# TODO: ElectionResults.RetentionContest
+def retentionContestModf(relec, cont):
+    cont["@id"] = relec._bmcont_id()
+    cont["ContestSelection"] = relec.yesOrNoBallotMeasureSelections()
+    #"EffectOfAbstain"?
+    candidate = relec.makeCandidate()
+    cont["CandidateId"] = candidate["@id"]
+    office = relec.makeOffice()
+    gpu = relec.getGpUnit(cont["ElectionDistrictId"])
+    if gpu:
+        gpu_name = gpu["Name"]
+    else:
+        gpu_name = '[missing region name]'
+    cont["SummaryText"] = 'Keep {} as {} of the {}'.format(candidate['BallotName'], office['Name'], gpu_name)
+    cont["BallotTitle"] = 'Judge Retention: {}'.format(office["Name"])
+
+makeContestMechanic(
+    "retention",
+    {
+        "@type": "ElectionResults.RetentionContest",
+        "BallotSubTitle": "Vote Yes or No",
+        "Type": "referendum",
+        "InfoUri": "https://betterpolls.com/",
+    },
+    retentionContestModf,
+)
+
+# TODO:
 # TODO: ElectionResults.PartyContest
 
 def setRandomMechanic(relec, contest):
@@ -247,6 +273,12 @@ class RandElection:
             gpunit["ComposingGpUnitIds"] = [x["@id"] for x in gpunitSubs]
         self.gpunits.append(gpunit)
         return gpunit
+
+    def getGpUnit(self, gpuid):
+        for gpunit in self.gpunits:
+            if gpunit["@id"] == gpuid:
+                return gpunit
+        return None
 
     def cselForCandidate(self, candidate):
         csel = {
