@@ -262,11 +262,13 @@ class RandElection:
         self.offices.append(office)
         return office
 
-    def makeGpUnit(self, gpunitSubs=None):
+    def makeGpUnit(self, gpunitSubs=None, gpunittype=None):
+        if gpunittype is None:
+            gpunittype = "city"
         gpunit = {
             "@id": self._gpunit_id(),
             "@type": "ElectionResults.ReportingUnit",
-            "Type": "city",
+            "Type": gpunittype,
             "Name": randomName(),
         }
         if gpunitSubs:
@@ -375,8 +377,8 @@ class RandElection:
         }
         leafGpUnits = [self.makeGpUnit() for _ in range(self.numLeafGpUnits)]
         l1groups = bin(leafGpUnits, self.numL2GpUnits)
-        l2GpUnits = [self.makeGpUnit(l1g) for l1g in l1groups]
-        topGpUnit = self.makeGpUnit(l2GpUnits)
+        l2GpUnits = [self.makeGpUnit(l1g, "county") for l1g in l1groups]
+        topGpUnit = self.makeGpUnit(l2GpUnits, "state")
 
         leafContests = [[self.makeContest(gpu) for _ in range(self.leafContests)] for gpu in leafGpUnits]
         l2Contests = [[self.makeContest(gpu) for _ in range(self.l2Contests)] for gpu in l2GpUnits]
@@ -432,8 +434,13 @@ class RandElection:
                 "@type": "ElectionResults.BallotStyle",
                 "GpUnitIds": [lgpu["@id"]],
                 "OrderedContent": oc,
-                "PageHeader": '''General Election, {DATE}
-{PLACES} page {PAGE} of {PAGES}''',
+                # EAC "Effective Design" example:
+                # Official Ballot for General Election
+                # City of Springfield
+                # Tuesday, November 8, 2022, page 1 of 5
+                "PageHeader": '''Official Ballot for General Election
+City of {PLACES}
+{DATEH}''',
             })
         election["BallotStyle"] = bstyles
         election["Candidate"] = self.candidates

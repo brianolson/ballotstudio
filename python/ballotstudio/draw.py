@@ -146,6 +146,22 @@ selsubStyle = ParagraphStyle(
     leading=gs.candsubLeading,
 )
 
+pageheaderStyle = ParagraphStyle(
+    'pageheader',
+    fontName=gs.headerFontName,
+    fontSize=gs.headerFontSize,
+    leading=gs.headerLeading,
+    leftIndent=1 + (0.1 * inch),
+)
+
+
+pageHeaderNumberStyle = ParagraphStyle(
+    'phnumber',
+    fontName=gs.headerFontName,
+    fontSize=gs.headerFontSize * 1.9,
+    leading=gs.headerLeading * 1.9,
+)
+
 def setOptionalFields(self, ob):
     for field_name, default_value in self._optional_fields:
         setattr(self, field_name, ob.get(field_name, default_value))
@@ -839,6 +855,15 @@ class OrderedHeader:
         return None
 
 
+def dateForHumans(anydate):
+    "try to parse YYYY-MM-DD, return long human date"
+    try:
+        parts = [int(x,10) for x in anydate.strip().split('-')]
+        when = time.mktime((parts[0], parts[1], parts[2], 12,0,0,0,0,-1))
+        return time.strftime("%A, %B %d, %Y", time.localtime(when))
+    except:
+        return anydate
+
 class BallotStyle:
     def __init__(self, erctx, ballotstyle_json_object):
         try:
@@ -893,6 +918,7 @@ class BallotStyle:
             PAGES=self._numPages,
             DATE=anydate,
             DATES=datepart,
+            DATEH=dateForHumans(anydate),
             PLACES=gpunitnames,
             PLACE=place,
         )
@@ -905,14 +931,17 @@ class BallotStyle:
         c.setStrokeColorRGB(0,0,0)
         c.setLineWidth(1.0)
         c.line(self.contentleft, self.contenttop, self.contentright, self.contenttop)
+        headerText = self.pageHeaderText(page)
         txto = c.beginText(self.contentleft + 0.1*inch, self.contenttop - gs.headerFontSize)
         txto.setFont(gs.headerFontName, gs.headerFontSize, gs.headerLeading)
-        headerText = self.pageHeaderText(page)
         nlines = len(headerText.splitlines())
         txto.textLines(headerText)
         c.drawText(txto)
         pageHeaderHeight = gs.headerLeading * nlines + 0.1*inch
-        #self._pageHeaderHeight = max(pageHeaderHeight, self._pageHeaderHeight)
+        pntext = '{PAGE}<font size="{smsize}">/{PAGES}</font>'.format(PAGE=page, PAGES=self._numPages, smsize=gs.headerFontSize)
+        pnpar = Paragraph(pntext, pageHeaderNumberStyle)
+        ww, wh = pnpar.wrap(inch,pageHeaderHeight)
+        pnpar.drawOn(c, self.contentright - ww, self.contenttop - wh)
         box = (self.contentleft + 0.1*inch, self.contenttop,
                self.contentright, self.contenttop - pageHeaderHeight)
         logger.debug('bs (%r) page %s box %r', self.bs['GpUnitIds'], page, box)
