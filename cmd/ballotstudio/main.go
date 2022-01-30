@@ -626,6 +626,10 @@ func main() {
 		maybefail(err, "-cookie-key, %v", err)
 	}
 
+	if postgresConnectString == "" {
+		postgresConnectString = os.Getenv("BS_PGCONN")
+	}
+
 	var db *sql.DB
 	var udb login.UserDB
 	var edb electionAppDB
